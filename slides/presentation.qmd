@@ -1,0 +1,74 @@
+---
+title: "Predicting Churn & Billing"
+subtitle: "Telco Customer Churn dataset — end-to-end ML"
+author: "Matej"
+date: today
+format:
+  revealjs:
+    theme: simple
+    slide-number: true
+    transition: fade
+---
+
+## The problem
+
+- 7,043 telecom customers
+- Two real business questions:
+  1. **Will a customer churn** (cancel)?
+  2. **What should their monthly bill be**, given their plan?
+
+::: {.notes}
+Framing for a non-technical audience: this is about keeping customers and billing them
+correctly.
+:::
+
+## Why it matters
+
+- Losing a customer costs far more than keeping one
+- Billing errors erode trust and cost revenue either direction
+- Both are answerable from data the company already has
+
+## Our approach
+
+1. Clean the data (fix a broken numeric column, handle new-customer edge cases)
+2. Explore it — find the patterns *before* trusting any model
+3. Engineer a handful of simple, explainable features
+4. Build a ladder of models — simple to advanced — for each question
+5. Compare every model honestly against a "do-nothing" baseline
+6. Ship a live app that makes real predictions
+
+## What we found — Churn
+
+- ~26.5% of customers churn
+- **Month-to-month contracts churn far more** than 1-2 year contracts
+- **Churn is concentrated in new customers** (first few months)
+- Our best model (Logistic Regression) meaningfully beats
+  "just guess nobody churns"
+
+## What we found — Billing
+
+- Monthly bill is almost entirely explained by **plan + add-ons**
+- Same plan → nearly the same bill (~$1 variation)
+- A simple model predicts bills very accurately — useful as a
+  **pricing sanity check**, not a way to set prices
+
+## Honest limits
+
+- Churn model: real signal, not perfect — a decision-support tool, not
+  an autopilot
+- Billing model: high accuracy because pricing is systematic here, not
+  because the model found something exotic
+- Neither model should make automated decisions without a human in the loop
+
+## The app
+
+- **Churn Predictor** — enter a customer's profile, get a churn probability
+- **Charges Predictor** — enter a plan, get an expected bill
+- **Model Leaderboard** — see exactly how every model performed, baseline included
+
+## Recommendations
+
+1. Focus retention efforts on new, month-to-month customers
+2. Use the churn model to triage, not to decide
+3. Use the billing model to catch outlier accounts, not to price
+4. Keep reporting honestly — a model close to baseline is a *finding*, not a failure

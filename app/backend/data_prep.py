@@ -42,6 +42,35 @@ def compute_overview_stats(df: pd.DataFrame) -> dict:
         .to_dict(orient="records")
     )
 
+    customers_by_internet = (
+        df["InternetService"].value_counts()
+        .reset_index()
+        .rename(columns={"index": "internet_service", "InternetService": "internet_service", "count": "count"})
+        .to_dict(orient="records")
+    )
+
+    churned = df[df["Churn"] == 1]
+    revenue_at_risk_monthly = float(churned["MonthlyCharges"].sum())
+    total_monthly_revenue = float(df["MonthlyCharges"].sum())
+
+    segment_cols = ["Contract", "InternetService", "PaymentMethod"]
+    segments = (
+        df.groupby(segment_cols)["Churn"].agg(["mean", "count"])
+        .reset_index()
+        .rename(columns={"mean": "churn_rate", "count": "customers"})
+    )
+    segments = segments[segments["customers"] >= 30].sort_values("churn_rate", ascending=False).head(5)
+    top_risk_segments = [
+        {
+            "contract": r["Contract"],
+            "internet_service": r["InternetService"],
+            "payment_method": r["PaymentMethod"],
+            "churn_rate": round(float(r["churn_rate"]), 4),
+            "customers": int(r["customers"]),
+        }
+        for _, r in segments.iterrows()
+    ]
+
     return {
         "total_customers": int(len(df)),
         "churn_rate": round(float(df["Churn"].mean()), 4),
@@ -57,4 +86,15 @@ def compute_overview_stats(df: pd.DataFrame) -> dict:
         "monthly_charges_distribution": [
             {"bucket": r["bucket"], "count": int(r["count"])} for r in monthly_charges_distribution
         ],
+        "customers_by_internet": [
+            {"internet_service": r["internet_service"], "count": int(r["count"])}
+            for r in customers_by_internet
+        ],
+        "revenue_at_risk": {
+            "monthly_amount": round(revenue_at_risk_monthly, 2),
+            "total_monthly_revenue": round(total_monthly_revenue, 2),
+            "pct_of_revenue": round(revenue_at_risk_monthly / total_monthly_revenue, 4),
+            "churned_customers": int(len(churned)),
+        },
+        "top_risk_segments": top_risk_segments,
     }

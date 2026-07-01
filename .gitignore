@@ -9,6 +9,10 @@ venv/
 /.quarto/
 report/*_files/
 slides/*_files/
+data/telco_clean.parquet
+
+# Playwright test artifacts
+.playwright-mcp/
 
 # Node / React
 app/frontend/node_modules/
@@ -24,3 +28,9 @@ app/backend/.env
 .DS_Store
 Thumbs.db
 .vscode/
+node_modules/
+frontend.log
+backend.log
+*.log
+.superpowers/
+Telco Insights (standalone).html

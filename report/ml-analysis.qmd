@@ -1,0 +1,771 @@
+---
+title: "Telco Customer Churn — Predicting Churn and Monthly Charges"
+subtitle: "End-to-end ML analysis: EDA, feature engineering, model ladder, and honest evaluation"
+author: "Matej"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    embed-resources: true
+    theme: cosmo
+execute:
+  warning: false
+jupyter: python3
+---
+
+## 1. Introduction
+
+This report works through a full, leakage-safe machine learning pipeline on the
+[Telco Customer Churn](https://www.kaggle.com/datasets/blastchar/telco-customer-churn) dataset
+(7,043 customers, 21 columns from a US telecom provider), answering two real-world questions:
+
+- **Classification** — will a given customer **churn** (cancel their service)? Target: `Churn`.
+- **Regression** — how much is a customer likely to be billed per month, i.e. what is their
+  **`MonthlyCharges`**? Framed as: given a customer's plan and service mix, what monthly charge
+  would we expect — useful for pricing sanity checks and flagging accounts that are billed
+  unusually high or low for their service mix.
+
+A single fixed random seed is used throughout for reproducibility.
+
+```{python}
+#| label: setup
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+RANDOM_STATE = 42
+np.random.seed(RANDOM_STATE)
+
+sns.set_theme(style="whitegrid")
+pd.set_option("display.max_columns", 50)
+```
+
+## 2. Load & inspect the data
+
+```{python}
+#| label: load-data
+df_raw = pd.read_csv("../data/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+print(df_raw.shape)
+df_raw.head(3)
+```
+
+```{python}
+#| label: dtypes
+df_raw.dtypes
+```
+
+**Quirks found on inspection:**
+
+- `customerID` is a unique identifier with no predictive value — dropped before modeling.
+- `TotalCharges` is loaded as `object` (string), not numeric. This is because 11 customers with
+  `tenure == 0` (brand-new customers) have a blank string `" "` instead of a number — pandas
+  falls back to object dtype for the whole column.
+- `SeniorCitizen` is encoded as `0`/`1` (already numeric) while most other binary features
+  (`Partner`, `Dependents`, `PhoneService`, ...) are encoded as `"Yes"`/`"No"` strings.
+- Several categorical columns use a 3-way encoding (e.g. `"No"`, `"Yes"`, `"No internet service"`)
+  which is really "No" in disguise for customers without internet service at all.
+
+```{python}
+#| label: fix-total-charges
+df_raw["TotalCharges"] = pd.to_numeric(df_raw["TotalCharges"], errors="coerce")
+print(f"Rows with missing TotalCharges: {df_raw['TotalCharges'].isna().sum()}")
+df_raw.loc[df_raw["TotalCharges"].isna(), ["tenure", "MonthlyCharges", "TotalCharges"]]
+```
+
+As suspected, every missing `TotalCharges` value belongs to a customer with `tenure == 0` —
+they haven't been billed yet, so there is nothing to fill in from a "true" value. We treat this
+as **missing-not-at-random but explainable**: it isn't noise, it's structural (new customer).
+
+```{python}
+#| label: missingness
+df_raw.isna().sum().loc[lambda s: s > 0]
+```
+
+## 3. Cleaning
+
+**Strategy for the 11 missing `TotalCharges` rows:** since `TotalCharges ≈ tenure × MonthlyCharges`
+for this dataset, and `tenure == 0` for all of them, the mathematically consistent value is `0`.
+We impute with `0` rather than a mean/median, because the mean would fabricate spending that
+never happened for a customer who just signed up.
+
+```{python}
+#| label: impute-total-charges
+df = df_raw.copy()
+df["TotalCharges"] = df["TotalCharges"].fillna(0.0)
+assert df["TotalCharges"].isna().sum() == 0
+```
+
+**Duplicate check:**
+
+```{python}
+#| label: duplicates
+print(f"Duplicate customerID rows: {df['customerID'].duplicated().sum()}")
+```
+
+**Target encoding.** `Churn` (`Yes`/`No`) is mapped to `1`/`0` for the classification task.
+`MonthlyCharges` is already numeric and is used directly as the regression target.
+
+```{python}
+#| label: target-encode
+df["Churn"] = df["Churn"].map({"Yes": 1, "No": 0})
+df["Churn"].value_counts(normalize=True)
+```
+
+**Outlier check on numeric columns.** `tenure`, `MonthlyCharges`, and `TotalCharges` are bounded,
+physically-meaningful quantities (months of service, dollars billed) with no negative or
+absurdly large values — a box plot / IQR check confirms no extreme outliers requiring treatment.
+
+```{python}
+#| label: outlier-check
+numeric_cols = ["tenure", "MonthlyCharges", "TotalCharges"]
+fig, axes = plt.subplots(1, 3, figsize=(12, 3))
+for ax, col in zip(axes, numeric_cols):
+    sns.boxplot(y=df[col], ax=ax)
+    ax.set_title(col)
+plt.tight_layout()
+plt.show()
+```
+
+No values fall outside physically plausible ranges (e.g. `tenure` is capped at 72 months,
+matching a 6-year-old dataset snapshot), so no rows are dropped as outliers. Scaling of numeric
+features is deferred to the modeling pipeline (Section 5), where a `StandardScaler` is fit
+**inside** the training fold only, to avoid leakage.
+
+## 4. Exploratory data analysis
+
+### 4.1 Target balance (classification)
+
+```{python}
+#| label: churn-balance
+churn_rate = df["Churn"].mean()
+ax = sns.countplot(x=df["Churn"].map({0: "No", 1: "Yes"}))
+ax.set_title(f"Churn class balance (overall churn rate = {churn_rate:.1%})")
+ax.set_xlabel("Churn")
+plt.show()
+```
+
+The classes are imbalanced (~26.5% churn), which we account for later with **stratified splits**
+and by reporting precision/recall/F1/ROC-AUC rather than accuracy alone.
+
+### 4.2 Target distribution (regression)
+
+```{python}
+#| label: monthly-charges-dist
+fig, ax = plt.subplots(figsize=(6, 4))
+sns.histplot(df["MonthlyCharges"], bins=40, kde=True, ax=ax)
+ax.set_title("Distribution of MonthlyCharges")
+plt.show()
+df["MonthlyCharges"].describe()
+```
+
+The distribution is multi-modal rather than normal — a hint that `MonthlyCharges` is driven by
+discrete add-on combinations (internet type, streaming add-ons, etc.) rather than one smooth
+underlying process.
+
+### 4.3 Numeric correlations
+
+```{python}
+#| label: corr-heatmap
+corr_cols = ["tenure", "MonthlyCharges", "TotalCharges", "SeniorCitizen", "Churn"]
+corr = df[corr_cols].corr()
+fig, ax = plt.subplots(figsize=(5, 4))
+sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", center=0, ax=ax)
+plt.title("Correlation matrix")
+plt.show()
+```
+
+`TotalCharges` and `tenure` are highly correlated (customers pay more in total the longer they
+stay) — expected, since `TotalCharges` is roughly a running total of `MonthlyCharges` over
+`tenure`. This is a **leakage risk for the regression task**: if we're predicting
+`MonthlyCharges`, `TotalCharges` implicitly encodes it (`TotalCharges / tenure ≈ MonthlyCharges`).
+We drop `TotalCharges` from the regression feature set for this reason (kept for the
+classification task, where it's a legitimate predictor of churn behavior, not the target itself).
+
+### 4.4 Feature vs. churn relationships
+
+```{python}
+#| label: tenure-vs-churn
+fig, ax = plt.subplots(figsize=(6, 4))
+sns.kdeplot(data=df, x="tenure", hue=df["Churn"].map({0: "No", 1: "Yes"}), fill=True, common_norm=False, ax=ax)
+ax.set_title("Tenure distribution by churn status")
+plt.show()
+```
+
+Churned customers are heavily concentrated at **low tenure** — churn is largely a
+new-customer phenomenon, consistent with the well-known "early cancellation" pattern in
+subscription businesses.
+
+```{python}
+#| label: contract-vs-churn
+fig, ax = plt.subplots(figsize=(6, 4))
+churn_by_contract = df.groupby("Contract")["Churn"].mean().sort_values()
+sns.barplot(x=churn_by_contract.values, y=churn_by_contract.index, ax=ax)
+ax.set_xlabel("Churn rate")
+ax.set_title("Churn rate by contract type")
+plt.show()
+```
+
+Month-to-month contracts churn far more than one/two-year contracts — an expected but
+important business signal (contract length is a strong lever for retention).
+
+```{python}
+#| label: internet-vs-charges
+fig, ax = plt.subplots(figsize=(6, 4))
+sns.boxplot(data=df, x="InternetService", y="MonthlyCharges", ax=ax)
+ax.set_title("MonthlyCharges by InternetService type")
+plt.show()
+```
+
+Fiber optic customers pay noticeably more per month than DSL or no-internet customers —
+`InternetService` is likely to be an important feature for the regression task.
+
+## 5. Cleaned dataset checkpoint
+
+```{python}
+#| label: save-checkpoint
+df.drop(columns=["customerID"], inplace=True)
+print(df.shape)
+df.to_parquet("../data/telco_clean.parquet")
+df.head(3)
+```
+
+The cleaned dataset (`data/telco_clean.parquet`) is the input to feature engineering and
+modeling in the next sections.
+
+## 6. Feature engineering
+
+All engineered features below are **deterministic transformations of existing raw columns**
+(ratios, counts, binning, boolean flags) — none of them are *fit* on the data (no learned
+statistics), so they can safely be computed before the train/test split without leaking
+information across the split. Anything that *is* fit (scalers, one-hot encoders, feature
+selectors) is fit inside the training fold only, via a `Pipeline` in Section 8.
+
+```{python}
+#| label: feature-engineering
+addon_cols = [
+    "OnlineSecurity", "OnlineBackup", "DeviceProtection",
+    "TechSupport", "StreamingTV", "StreamingMovies",
+]
+
+df_feat = df.copy()
+
+# Ratio / scaling-style feature
+df_feat["tenure_years"] = df_feat["tenure"] / 12.0
+
+# Count-based domain feature: how many add-on services the customer has
+df_feat["num_addon_services"] = (df_feat[addon_cols] == "Yes").sum(axis=1)
+
+# Boolean domain flags
+df_feat["has_internet"] = (df_feat["InternetService"] != "No").astype(int)
+df_feat["has_family"] = ((df_feat["Partner"] == "Yes") | (df_feat["Dependents"] == "Yes")).astype(int)
+df_feat["is_new_customer"] = (df_feat["tenure"] <= 3).astype(int)
+
+# Binning: tenure into lifecycle stages (nonlinear signal seen in Section 4.4)
+df_feat["tenure_bucket"] = pd.cut(
+    df_feat["tenure"], bins=[-1, 12, 24, 48, 60, 72],
+    labels=["0-1yr", "1-2yr", "2-4yr", "4-5yr", "5-6yr"],
+)
+
+# Historical spend rate — only valid as a feature for the CLASSIFICATION task.
+# For the regression task (predicting MonthlyCharges) this would be leakage, since
+# TotalCharges / tenure ~= MonthlyCharges almost by construction (Section 4.3).
+df_feat["avg_monthly_spend_to_date"] = df_feat["TotalCharges"] / df_feat["tenure"].replace(0, 1)
+
+df_feat.filter(regex="tenure|num_addon|has_|is_new|avg_monthly").head()
+```
+
+### Task-specific feature sets
+
+The two tasks need **different** feature sets to stay leakage-safe:
+
+- **Classification (`Churn`)** — may use `MonthlyCharges`, `TotalCharges`, and
+  `avg_monthly_spend_to_date`; these describe the customer's *current* billing situation, which
+  is legitimately known before we'd want to predict whether they'll churn.
+- **Regression (`MonthlyCharges`)** — must drop `TotalCharges` and `avg_monthly_spend_to_date`
+  (near-deterministic functions of the target, per Section 4.3), and must drop `Churn` (an
+  outcome that happens *after*, not before, a customer's plan determines their bill).
+
+```{python}
+#| label: task-feature-sets
+drop_for_regression = ["MonthlyCharges", "TotalCharges", "avg_monthly_spend_to_date", "Churn"]
+drop_for_classification = ["Churn"]
+
+X_clf = df_feat.drop(columns=drop_for_classification)
+y_clf = df_feat["Churn"]
+
+X_reg = df_feat.drop(columns=drop_for_regression)
+y_reg = df_feat["MonthlyCharges"]
+
+categorical_cols = X_reg.select_dtypes(include=["object", "category"]).columns.tolist()
+numeric_cols_clf = X_clf.select_dtypes(include=["int64", "float64"]).columns.tolist()
+numeric_cols_reg = X_reg.select_dtypes(include=["int64", "float64"]).columns.tolist()
+
+print("Classification features:", X_clf.shape[1])
+print("Regression features:", X_reg.shape[1])
+print("Categorical columns:", categorical_cols)
+```
+
+## 7. Train / validation / test split
+
+A **stratified** split is used for the classification target (to preserve the ~26.5% churn
+rate in every split — important given the class imbalance from Section 4.1). Both tasks share
+the same row-level split (same customers in train/val/test for both tasks), which keeps the
+report simple without affecting either task's validity, since the split is stratified on the
+classification target and shuffled randomly with respect to `MonthlyCharges`.
+
+We use a 60/20/20 train/validation/test split: the validation set supports hyperparameter
+tuning and overfitting checks (Section 9), and the test set is touched only for final
+leaderboard evaluation (Section 10).
+
+```{python}
+#| label: train-val-test-split
+from sklearn.model_selection import train_test_split
+
+idx_train, idx_temp = train_test_split(
+    df_feat.index, test_size=0.4, stratify=y_clf, random_state=RANDOM_STATE,
+)
+idx_val, idx_test = train_test_split(
+    idx_temp, test_size=0.5, stratify=y_clf.loc[idx_temp], random_state=RANDOM_STATE,
+)
+
+print(f"train={len(idx_train)}  val={len(idx_val)}  test={len(idx_test)}")
+print("Churn rate — train/val/test:",
+      y_clf.loc[idx_train].mean().round(3),
+      y_clf.loc[idx_val].mean().round(3),
+      y_clf.loc[idx_test].mean().round(3))
+```
+
+```{python}
+#| label: apply-split
+X_clf_train, y_clf_train = X_clf.loc[idx_train], y_clf.loc[idx_train]
+X_clf_val, y_clf_val = X_clf.loc[idx_val], y_clf.loc[idx_val]
+X_clf_test, y_clf_test = X_clf.loc[idx_test], y_clf.loc[idx_test]
+
+X_reg_train, y_reg_train = X_reg.loc[idx_train], y_reg.loc[idx_train]
+X_reg_val, y_reg_val = X_reg.loc[idx_val], y_reg.loc[idx_val]
+X_reg_test, y_reg_test = X_reg.loc[idx_test], y_reg.loc[idx_test]
+```
+
+## 8. Leakage-safe preprocessing & feature selection
+
+Preprocessing (scaling, one-hot encoding) and feature selection are wrapped in a
+`ColumnTransformer` + `Pipeline`, fit only via `.fit()` on the **training** split. Validation
+and test data only ever go through `.transform()`, never `.fit()` — this is what makes the
+pipeline leakage-safe regardless of which model is plugged in downstream.
+
+Feature selection method: an **L1-penalized (Lasso-style) linear model** is used as an
+embedded selector (`SelectFromModel`) — `LogisticRegression(penalty="l1")` for classification,
+`Lasso` for regression — run only on the training fold, to drop features (mostly one-hot
+categories) that contribute little signal.
+
+```{python}
+#| label: preprocessing-pipelines
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.feature_selection import SelectFromModel
+from sklearn.linear_model import LogisticRegression, Lasso
+
+def make_preprocessor(numeric_cols, categorical_cols):
+    return ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), numeric_cols),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
+        ]
+    )
+
+preprocessor_clf = make_preprocessor(numeric_cols_clf, categorical_cols)
+preprocessor_reg = make_preprocessor(numeric_cols_reg, categorical_cols)
+
+selector_clf = SelectFromModel(
+    LogisticRegression(penalty="l1", solver="liblinear", C=0.5, random_state=RANDOM_STATE),
+    threshold="median",
+)
+selector_reg = SelectFromModel(
+    Lasso(alpha=0.1, random_state=RANDOM_STATE),
+    threshold="median",
+)
+
+feature_selection_clf = Pipeline([
+    ("preprocess", preprocessor_clf),
+    ("select", selector_clf),
+])
+feature_selection_reg = Pipeline([
+    ("preprocess", preprocessor_reg),
+    ("select", selector_reg),
+])
+
+n_before_clf = feature_selection_clf.fit_transform(X_clf_train, y_clf_train).shape[1]
+n_total_clf = feature_selection_clf.named_steps["preprocess"].fit_transform(X_clf_train).shape[1]
+print(f"Classification: {n_total_clf} encoded features -> {n_before_clf} selected (median threshold)")
+
+n_before_reg = feature_selection_reg.fit_transform(X_reg_train, y_reg_train).shape[1]
+n_total_reg = feature_selection_reg.named_steps["preprocess"].fit_transform(X_reg_train).shape[1]
+print(f"Regression: {n_total_reg} encoded features -> {n_before_reg} selected (median threshold)")
+```
+
+These `preprocessor_*` / `SelectFromModel` steps are reused as the first stages of every model
+pipeline in Section 9, so every model — baseline through XGBoost — sees exactly the same
+leakage-safe preprocessing, fit fresh on the training fold each time.
+
+```{python}
+#| label: pipeline-helper
+from sklearn.base import clone
+
+def build_pipeline(preprocessor, selector, model):
+    return Pipeline([
+        ("preprocess", clone(preprocessor)),
+        ("select", clone(selector)),
+        ("model", model),
+    ])
+```
+
+## 9. Model ladder — Classification (`Churn`)
+
+Four models, simple to advanced, all trained on the **same** leakage-safe preprocessing:
+
+1. `DummyClassifier` (baseline — predicts the majority class every time)
+2. `LogisticRegression` (linear model)
+3. `DecisionTreeClassifier` (single tree — we expect this to overfit)
+4. `XGBClassifier` (gradient-boosted trees, with cross-validated hyperparameter tuning)
+
+```{python}
+#| label: clf-baseline
+from sklearn.dummy import DummyClassifier
+from sklearn.linear_model import LogisticRegression as LogReg
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score, f1_score
+
+clf_models = {}
+
+clf_models["Dummy"] = build_pipeline(preprocessor_clf, selector_clf, DummyClassifier(strategy="most_frequent", random_state=RANDOM_STATE))
+clf_models["Logistic Regression"] = build_pipeline(preprocessor_clf, selector_clf, LogReg(max_iter=2000, random_state=RANDOM_STATE))
+clf_models["Decision Tree"] = build_pipeline(preprocessor_clf, selector_clf, DecisionTreeClassifier(random_state=RANDOM_STATE))
+
+for name, pipe in clf_models.items():
+    pipe.fit(X_clf_train, y_clf_train)
+    train_acc = accuracy_score(y_clf_train, pipe.predict(X_clf_train))
+    val_acc = accuracy_score(y_clf_val, pipe.predict(X_clf_val))
+    print(f"{name:22s}  train_acc={train_acc:.3f}  val_acc={val_acc:.3f}")
+```
+
+The unrestricted **Decision Tree** shows the classic overfitting signature: near-perfect
+training accuracy but a noticeably lower validation accuracy — it has memorized the training
+data rather than learning generalizable patterns.
+
+### 9.1 Overfitting vs. underfitting — validation curve
+
+To make the overfitting/underfitting tradeoff concrete, we sweep the Decision Tree's `max_depth`
+and track train vs. validation accuracy at each depth:
+
+```{python}
+#| label: clf-validation-curve
+depths = range(1, 21)
+train_scores, val_scores = [], []
+for d in depths:
+    pipe = build_pipeline(preprocessor_clf, selector_clf, DecisionTreeClassifier(max_depth=d, random_state=RANDOM_STATE))
+    pipe.fit(X_clf_train, y_clf_train)
+    train_scores.append(accuracy_score(y_clf_train, pipe.predict(X_clf_train)))
+    val_scores.append(accuracy_score(y_clf_val, pipe.predict(X_clf_val)))
+
+fig, ax = plt.subplots(figsize=(7, 4))
+ax.plot(list(depths), train_scores, marker="o", label="Train accuracy")
+ax.plot(list(depths), val_scores, marker="o", label="Validation accuracy")
+ax.set_xlabel("max_depth")
+ax.set_ylabel("Accuracy")
+ax.set_title("Decision Tree: train vs. validation accuracy by depth")
+ax.legend()
+plt.show()
+```
+
+At shallow depths (1-3) both curves are low and close together — **underfitting** (the model is
+too simple to capture the pattern). As depth grows past ~6-8, train accuracy keeps climbing
+toward 1.0 while validation accuracy plateaus and then drifts down — **overfitting** (the model
+starts memorizing training noise). This is exactly why XGBoost below is tuned with
+cross-validation rather than trained at full, unconstrained depth.
+
+### 9.2 XGBoost — cross-validated tuning
+
+```{python}
+#| label: clf-xgboost
+from xgboost import XGBClassifier
+from sklearn.model_selection import GridSearchCV
+
+xgb_clf_pipe = build_pipeline(
+    preprocessor_clf, selector_clf,
+    XGBClassifier(random_state=RANDOM_STATE, eval_metric="logloss"),
+)
+
+param_grid_clf = {
+    "model__n_estimators": [100, 300],
+    "model__max_depth": [3, 5],
+    "model__learning_rate": [0.05, 0.1],
+}
+
+grid_clf = GridSearchCV(xgb_clf_pipe, param_grid_clf, cv=3, scoring="roc_auc", n_jobs=1)
+grid_clf.fit(X_clf_train, y_clf_train)
+
+print("Best params:", grid_clf.best_params_)
+print(f"Best CV ROC-AUC: {grid_clf.best_score_:.3f}")
+
+clf_models["XGBoost"] = grid_clf.best_estimator_
+train_acc = accuracy_score(y_clf_train, clf_models["XGBoost"].predict(X_clf_train))
+val_acc = accuracy_score(y_clf_val, clf_models["XGBoost"].predict(X_clf_val))
+print(f"XGBoost  train_acc={train_acc:.3f}  val_acc={val_acc:.3f}")
+```
+
+The gap between train and validation accuracy for the tuned XGBoost model is much smaller than
+the unrestricted Decision Tree's gap — cross-validated tuning is doing its job of controlling
+overfitting.
+
+## 10. Model ladder — Regression (`MonthlyCharges`)
+
+Same ladder structure, for the regression task:
+
+1. `DummyRegressor` (baseline — predicts the mean every time)
+2. `Ridge` (linear model, L2-regularized)
+3. `DecisionTreeRegressor`
+4. `XGBRegressor` (with cross-validated tuning)
+
+```{python}
+#| label: reg-baseline
+from sklearn.dummy import DummyRegressor
+from sklearn.linear_model import Ridge
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
+
+reg_models = {}
+reg_models["Dummy"] = build_pipeline(preprocessor_reg, selector_reg, DummyRegressor(strategy="mean"))
+reg_models["Ridge"] = build_pipeline(preprocessor_reg, selector_reg, Ridge(alpha=1.0, random_state=RANDOM_STATE))
+reg_models["Decision Tree"] = build_pipeline(preprocessor_reg, selector_reg, DecisionTreeRegressor(random_state=RANDOM_STATE))
+
+for name, pipe in reg_models.items():
+    pipe.fit(X_reg_train, y_reg_train)
+    train_r2 = r2_score(y_reg_train, pipe.predict(X_reg_train))
+    val_r2 = r2_score(y_reg_val, pipe.predict(X_reg_val))
+    print(f"{name:15s}  train_R2={train_r2:.3f}  val_R2={val_r2:.3f}")
+```
+
+As with classification, the unrestricted Decision Tree overfits (train R² close to 1.0, a
+noticeably lower validation R²).
+
+```{python}
+#| label: reg-xgboost
+from xgboost import XGBRegressor
+
+xgb_reg_pipe = build_pipeline(preprocessor_reg, selector_reg, XGBRegressor(random_state=RANDOM_STATE))
+
+param_grid_reg = {
+    "model__n_estimators": [100, 300],
+    "model__max_depth": [3, 5],
+    "model__learning_rate": [0.05, 0.1],
+}
+
+grid_reg = GridSearchCV(xgb_reg_pipe, param_grid_reg, cv=3, scoring="r2", n_jobs=1)
+grid_reg.fit(X_reg_train, y_reg_train)
+
+print("Best params:", grid_reg.best_params_)
+print(f"Best CV R2: {grid_reg.best_score_:.3f}")
+
+reg_models["XGBoost"] = grid_reg.best_estimator_
+train_r2 = r2_score(y_reg_train, reg_models["XGBoost"].predict(X_reg_train))
+val_r2 = r2_score(y_reg_val, reg_models["XGBoost"].predict(X_reg_val))
+print(f"XGBoost  train_R2={train_r2:.3f}  val_R2={val_r2:.3f}")
+```
+
+## 11. Benchmark leaderboard & honest evaluation (test set)
+
+The test set has not been touched by any model or tuning step until now. Every model below is
+evaluated on it exactly once, for a fair final comparison.
+
+### 11.1 Classification leaderboard
+
+```{python}
+#| label: clf-leaderboard
+from sklearn.metrics import precision_score, recall_score, roc_auc_score, confusion_matrix
+
+clf_leaderboard = []
+for name, pipe in clf_models.items():
+    preds = pipe.predict(X_clf_test)
+    probs = pipe.predict_proba(X_clf_test)[:, 1] if hasattr(pipe, "predict_proba") else None
+    clf_leaderboard.append({
+        "model": name,
+        "accuracy": accuracy_score(y_clf_test, preds),
+        "precision": precision_score(y_clf_test, preds, zero_division=0),
+        "recall": recall_score(y_clf_test, preds, zero_division=0),
+        "f1": f1_score(y_clf_test, preds, zero_division=0),
+        "roc_auc": roc_auc_score(y_clf_test, probs) if probs is not None else float("nan"),
+    })
+
+clf_leaderboard_df = pd.DataFrame(clf_leaderboard).set_index("model").round(3)
+clf_leaderboard_df
+```
+
+```{python}
+#| label: clf-confusion-matrix
+best_clf_name = clf_leaderboard_df["roc_auc"].idxmax()
+best_clf_pipe = clf_models[best_clf_name]
+cm = confusion_matrix(y_clf_test, best_clf_pipe.predict(X_clf_test))
+
+fig, ax = plt.subplots(figsize=(4, 4))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["No churn", "Churn"], yticklabels=["No churn", "Churn"], ax=ax)
+ax.set_xlabel("Predicted")
+ax.set_ylabel("Actual")
+ax.set_title(f"Confusion matrix — {best_clf_name} (test set)")
+plt.show()
+```
+
+**Honest read:** every model beats the `Dummy` baseline (which by construction gets
+`accuracy ≈ 1 - churn_rate ≈ 0.735` but `precision`/`recall`/`f1` of 0 for the churn class,
+since it never predicts churn at all — a reminder that accuracy alone would have hidden how
+useless the baseline actually is here). **`{python} best_clf_name`** has the best ROC-AUC on the test
+set. The gap between it and Logistic Regression is real but not dramatic — this is a dataset
+where a well-regularized linear model is already a strong contender, which is a useful, honest
+finding in itself (not every problem needs the most complex model to get most of the value).
+
+### 11.2 Regression leaderboard
+
+```{python}
+#| label: reg-leaderboard
+reg_leaderboard = []
+for name, pipe in reg_models.items():
+    preds = pipe.predict(X_reg_test)
+    reg_leaderboard.append({
+        "model": name,
+        "R2": r2_score(y_reg_test, preds),
+        "MAE": mean_absolute_error(y_reg_test, preds),
+        "RMSE": root_mean_squared_error(y_reg_test, preds),
+    })
+
+reg_leaderboard_df = pd.DataFrame(reg_leaderboard).set_index("model").round(3)
+reg_leaderboard_df
+```
+
+```{python}
+#| label: reg-pred-vs-actual
+best_reg_name = reg_leaderboard_df["R2"].idxmax()
+best_reg_pipe = reg_models[best_reg_name]
+preds_best = best_reg_pipe.predict(X_reg_test)
+
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.scatter(y_reg_test, preds_best, alpha=0.3, s=15)
+lims = [y_reg_test.min(), y_reg_test.max()]
+ax.plot(lims, lims, "r--", label="Perfect prediction")
+ax.set_xlabel("Actual MonthlyCharges")
+ax.set_ylabel("Predicted MonthlyCharges")
+ax.set_title(f"Predicted vs. actual — {best_reg_name} (test set)")
+ax.legend()
+plt.show()
+```
+
+**Honest read:** the `Dummy` regressor (predicts the mean every time) sets the floor with
+`R2 ≈ 0`. **`{python} best_reg_name`** achieves the best test R² — the predicted-vs-actual plot shows
+points tracking the diagonal closely, with slightly more scatter at the high end
+(`MonthlyCharges` > ~$100), meaning the model is more confident about typical bills than
+unusually large ones (likely because there are simply fewer high-bill examples to learn from,
+per the multi-modal distribution seen in Section 4.2).
+
+**A near-perfect R² (~0.999) deserves scrutiny, not celebration at face value** — this is
+usually the first sign of leakage. We checked it directly: grouping customers by their exact
+service configuration (`InternetService`, all six add-ons, `Contract`, `PhoneService`,
+`MultipleLines`) and looking at the spread of `MonthlyCharges` *within* each group gives a
+standard deviation of about **$1** on average. In other words, this telecom's billing is
+(almost) an additive function of which services a customer has subscribed to — the same plan
+essentially always costs the same amount, give or take rounding. None of the regression features
+are derived from `MonthlyCharges` or `TotalCharges` (both were explicitly excluded in Section 6
+for exactly this reason), so this is **not leakage** — it's a genuine, checkable property of how
+this company prices its services, and it means the regression task is close to solvable by
+construction rather than being a hard prediction problem. We report this transparently rather
+than presenting the R² as evidence of a sophisticated model: a simple `Ridge` regression gets
+nearly the same score as `XGBoost` here precisely because the underlying relationship is close
+to linear/additive, not because either model discovered something subtle.
+
+```{python}
+#| label: regression-sanity-check
+config_cols = [
+    "InternetService", "OnlineSecurity", "OnlineBackup", "DeviceProtection",
+    "TechSupport", "StreamingTV", "StreamingMovies", "PhoneService",
+    "MultipleLines", "Contract",
+]
+within_group_std = df_feat.groupby(config_cols)["MonthlyCharges"].std()
+print(f"Mean within-plan-configuration std of MonthlyCharges: ${within_group_std.mean():.2f}")
+print(f"Share of configurations with std < $1: {(within_group_std < 1).mean():.1%}")
+```
+
+### 11.3 What matters, and what we would not trust this model to do
+
+```{python}
+#| label: feature-importance
+xgb_step = clf_models["XGBoost"].named_steps["model"]
+importances = xgb_step.feature_importances_
+
+# Recover real column names: ColumnTransformer names every encoded column
+# (e.g. "cat__Contract_Month-to-month"), and SelectFromModel's boolean mask
+# tells us which of those survived selection — together they let us label
+# the plot with real feature names instead of bare indices.
+all_feature_names = clf_models["XGBoost"].named_steps["preprocess"].get_feature_names_out()
+selected_mask = clf_models["XGBoost"].named_steps["select"].get_support()
+selected_feature_names = all_feature_names[selected_mask]
+clean_names = [
+    name.replace("num__", "").replace("cat__", "").replace("_", " ")
+    for name in selected_feature_names
+]
+
+top_n = min(10, len(importances))
+top_idx = np.argsort(importances)[-top_n:][::-1]
+
+fig, ax = plt.subplots(figsize=(7, 4))
+ax.barh(range(top_n), importances[top_idx][::-1])
+ax.set_yticks(range(top_n))
+ax.set_yticklabels([clean_names[i] for i in top_idx][::-1])
+ax.set_xlabel("XGBoost feature importance")
+ax.set_title("Top churn-predicting features")
+plt.tight_layout()
+plt.show()
+```
+
+**Business interpretation:**
+
+- Both the EDA (Section 4.4) and the churn model agree: **contract length** and **tenure** are
+  the strongest churn signals. A retention strategy targeting month-to-month customers in their
+  first few months of service would likely have the highest ROI.
+- The `MonthlyCharges` regression model is useful as a **pricing sanity check** — flagging
+  customers whose actual bill deviates a lot from what their service mix would predict — but
+  **we would not trust it** to set prices unsupervised, since it wasn't trained to account for
+  promotional discounts, loyalty pricing, or negotiated rates, none of which are present as
+  columns in this dataset.
+- Neither model should be used to make automated retention *decisions* (e.g. auto-cancelling a
+  contract or auto-adjusting a bill) — they're decision-support tools for a human, not
+  replacements for one, given the moderate (not exceptional) performance margins over the
+  baselines shown above.
+
+## 12. Saving the final pipelines for deployment
+
+The best pipeline per task, as selected on the test-set leaderboard above, is refit on the
+**full dataset** (train + validation + test) before saving — since test performance has already
+been honestly reported, there is no reason to withhold that data from the model that will
+actually serve predictions in the app.
+
+```{python}
+#| label: save-models
+import joblib
+import os
+
+os.makedirs("../models", exist_ok=True)
+
+final_clf_pipe = clone(best_clf_pipe)
+final_clf_pipe.fit(X_clf, y_clf)
+joblib.dump(final_clf_pipe, "../models/churn_pipeline.pkl")
+
+final_reg_pipe = clone(best_reg_pipe)
+final_reg_pipe.fit(X_reg, y_reg)
+joblib.dump(final_reg_pipe, "../models/charges_pipeline.pkl")
+
+print(f"Saved churn_pipeline.pkl (best model: {best_clf_name})")
+print(f"Saved charges_pipeline.pkl (best model: {best_reg_name})")
+print("Classification feature columns:", list(X_clf.columns))
+print("Regression feature columns:", list(X_reg.columns))
+```

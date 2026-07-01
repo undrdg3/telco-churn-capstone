@@ -44,8 +44,9 @@ npm run dev
 
 ## Deliverables
 
-- `report/ml-analysis.qmd` — full analysis report (D1)
+- `report/ml-analysis.qmd` / `report/ml-analysis.html` — full analysis report (D1)
 - `app/` — deployed prediction app (D2)
 - `docs/ai-workflow-reflection.md` — AI-workflow reflection (D3)
-- `slides/` — presentation deck (D4)
+- `slides/presentation.qmd` — presentation deck (D4)
 - `docs/executive-summary.md` — executive summary (D5)
+- `docs/explain-to-professor.md` — plain-language walkthrough of every step and why it was done

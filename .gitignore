@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Quarto
+/.quarto/
+report/*_files/
+slides/*_files/
+
+# Node / React
+app/frontend/node_modules/
+app/frontend/dist/
+app/frontend/.env
+app/frontend/.env.local
+
+# FastAPI backend
+app/backend/__pycache__/
+app/backend/.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/

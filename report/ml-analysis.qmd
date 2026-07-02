@@ -658,6 +658,62 @@ more interpretable linear model as the practical choice given that tie, which is
 finding: this is a dataset where a well-regularized linear model already captures most of the
 available signal, and more model complexity buys essentially nothing.
 
+### 11.1.1 Choosing a decision threshold
+
+Every metric above uses the default 0.5 probability cutoff ("flag as churn if probability ≥ 50%")
+— an arbitrary convention, not a business decision. At 0.5, `{python} best_clf_name` catches only
+about half of actual churners (recall = 0.503, from the leaderboard above). For a retention use
+case, missing a real churner (lost revenue, no chance to intervene) is usually more costly than
+a false alarm (an unnecessary retention offer to a customer who was staying anyway) — so a lower
+threshold that trades some precision for more recall is worth considering. This tuning is done on
+the **validation** set, consistent with Section 11.0 — the test set is touched only once, to
+confirm the final choice.
+
+```{python}
+#| label: threshold-analysis
+from sklearn.metrics import precision_recall_curve
+
+probs_val_best = best_clf_pipe.predict_proba(X_clf_val)[:, 1]
+prec_curve, rec_curve, thresh_curve = precision_recall_curve(y_clf_val, probs_val_best)
+
+fig, ax = plt.subplots(figsize=(7, 4))
+ax.plot(thresh_curve, prec_curve[:-1], label="Precision")
+ax.plot(thresh_curve, rec_curve[:-1], label="Recall")
+ax.axvline(0.5, color="gray", linestyle="--", alpha=0.6, label="Default (0.5)")
+ax.set_xlabel("Decision threshold")
+ax.set_ylabel("Score")
+ax.set_title(f"Precision / recall vs. threshold — {best_clf_name} (validation set)")
+ax.legend()
+plt.show()
+```
+
+```{python}
+#| label: threshold-pick
+target_recall = 0.70
+candidates = np.where(rec_curve[:-1] >= target_recall)[0]
+chosen_threshold = float(thresh_curve[candidates[-1]]) if len(candidates) else 0.5
+chosen_precision = float(prec_curve[:-1][candidates[-1]]) if len(candidates) else None
+chosen_recall = float(rec_curve[:-1][candidates[-1]]) if len(candidates) else None
+
+print(f"Chosen threshold (validation set): {chosen_threshold:.3f}")
+print(f"At this threshold on validation -> precision: {chosen_precision:.3f}, recall: {chosen_recall:.3f}")
+
+test_probs_best = best_clf_pipe.predict_proba(X_clf_test)[:, 1]
+test_preds_chosen = (test_probs_best >= chosen_threshold).astype(int)
+print(
+    f"Confirmed on test set -> precision: {precision_score(y_clf_test, test_preds_chosen, zero_division=0):.3f}, "
+    f"recall: {recall_score(y_clf_test, test_preds_chosen, zero_division=0):.3f}, "
+    f"f1: {f1_score(y_clf_test, test_preds_chosen, zero_division=0):.3f}"
+)
+```
+
+**Decision:** we lower the deployed threshold to **`{python} round(chosen_threshold, 2)`** (from the
+default 0.5) to prioritize catching more real churners, accepting more false alarms in exchange.
+This is a genuine business tradeoff, not a modeling improvement — the model itself is unchanged,
+only the cutoff applied to its output. The deployed app uses this threshold for its binary
+"at risk" flag, while still showing the raw probability so a human can apply their own judgment
+regardless of where the cutoff sits.
+
 ### 11.2 Regression leaderboard
 
 ```{python}

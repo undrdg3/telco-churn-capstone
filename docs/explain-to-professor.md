@@ -258,18 +258,42 @@ and saying so is exactly the kind of honesty the assignment grades for.
 | Decision Tree | 0.997 | 1.15 | 1.51 |
 | XGBoost | 0.999 | 0.81 | 1.07 |
 
-**Why R² of 0.999 is NOT a red flag here (I checked):** a near-perfect score this high usually
-means leakage — a feature secretly containing the answer. I verified it isn't: I grouped
-customers by their exact plan (internet type + every add-on + contract type) and looked at how
-much `MonthlyCharges` varies *within* customers who have the identical plan. The spread was
-tiny — about $1 on average. In plain terms: **this company's pricing is basically a fixed price
-list per service combination** — if you know exactly what someone signed up for, you basically
-know their bill already, give or take rounding. None of the regression features come from
-`MonthlyCharges` or `TotalCharges` (both were excluded back in Step 4 specifically to prevent
-this), so the high R² reflects a genuinely easy, well-structured pricing scheme — not a modeling
-trick or a leaked target. I say this explicitly in the report instead of just presenting 0.999
-as an impressive number, because a professor should be able to ask "why is this so high?" and
-get a real answer, not silence.
+**Why R² of 0.999 is NOT a red flag here (I checked, and then proved it four ways):** a
+near-perfect score this high usually means leakage — a feature secretly containing the answer.
+First, the domain check: I grouped customers by their exact plan (internet type + every add-on +
+contract type) and looked at how much `MonthlyCharges` varies *within* customers who have the
+identical plan. The spread was tiny — about $1 on average. In plain terms: **this company's
+pricing is basically a fixed price list per service combination** — if you know exactly what
+someone signed up for, you basically know their bill already, give or take rounding. None of the
+regression features come from `MonthlyCharges` or `TotalCharges` (both were excluded back in
+Step 4 specifically to prevent this).
+
+That explanation alone is a story, though — so I added four independent checks (Section 11.3 of
+the report) that test for overfitting directly instead of just asserting it isn't happening:
+
+1. **Train vs. validation vs. test R², side by side.** Overfitting means training performance is
+   much higher than held-out performance. Here: train = 0.9988, validation = 0.9989,
+   test = 0.9988 — a gap of essentially zero. That gap (or lack of one) *is* the actual
+   definition of overfitting/not-overfitting, not the R² value itself.
+2. **5-fold cross-validation on the whole dataset.** Refit the model on 5 different train/test
+   splits: R² per fold = [0.9988, 0.9989, 0.9988, 0.9988, 0.9988]. Stable to the third decimal —
+   rules out "you just got a lucky split."
+3. **Permutation test (the strongest check).** I randomly shuffled the `MonthlyCharges` training
+   labels so any real relationship between features and target is destroyed, then refit and
+   scored on the real test set. If there were a bug or leakage letting the pipeline "see" the
+   answer some other way, it could still score well even on garbage labels. Instead, R² collapsed
+   to **0.0278** — proof the 0.999 score requires the real, unshuffled relationship, not a
+   pipeline artifact.
+4. **The recovered rate card.** Since `Ridge` is linear, I can print its coefficients as an actual
+   dollar price list: base rate ~$53, Fiber optic internet +$13.89/mo, each add-on service
+   +~$8/mo, phone service +$6.42/mo, and so on. These numbers make intuitive business sense on
+   their own — a model that had memorized noise wouldn't produce a clean, interpretable price
+   list like this.
+
+Together, these four checks are why the high R² is read as a genuine property of this company's
+pricing (it's close to deterministic) rather than a flaw in the evaluation. If a professor asks
+"why is this so high?", the answer is now backed by four separate pieces of evidence, not one
+paragraph of reasoning.
 
 ## Step 10 — Business interpretation & what NOT to trust the models for
 
@@ -323,10 +347,14 @@ the sanity-check use case.
 (typing into the React form → clicking predict → seeing a real number come back from the FastAPI
 server) was tested in an actual browser session before considering this done.
 
-## What's left (as of this note)
+## Deployment
 
-- Deploying the app publicly (frontend → Vercel/Netlify, backend → Render/Railway) — this needs
-  account access, so it's done interactively rather than autonomously
-- Push everything to a public GitHub repo
+The app is live: frontend on Vercel (`https://telco-churn-capstone.vercel.app/`), backend on
+Render (`https://telco-churn-api-nin2.onrender.com/`). Repo is public at
+`https://github.com/undrdg3/telco-churn-capstone`. Verified end-to-end with a real browser
+session (Overview stats, churn prediction, charges prediction) hitting the live backend, not
+just localhost.
 
-This file will be updated as each of those steps is completed.
+Note for anyone testing it cold: the backend is on Render's free tier, which sleeps after 15
+minutes of no traffic — the first request after a gap takes 30-60 seconds to wake up, then
+responds normally.

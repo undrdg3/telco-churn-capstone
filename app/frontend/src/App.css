@@ -766,6 +766,34 @@ select option { background: #FBF9F3; color: #1B2521; }
   gap: 32px;
 }
 
+.disclaimer-card {
+  border-left: 3px solid #D69A3C;
+  margin-top: -18px;
+}
+
+.disclaimer-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1B2521;
+  margin: 0 0 8px;
+}
+
+.disclaimer-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(27, 37, 33, 0.72);
+  margin: 0;
+}
+
+.disclaimer-body strong {
+  color: #1B2521;
+  font-weight: 600;
+}
+
 .board-title {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 16.5px;

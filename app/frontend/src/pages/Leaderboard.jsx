@@ -1,5 +1,32 @@
 import leaderboard from "../leaderboard.json";
 
+function OverfittingDisclaimer() {
+  return (
+    <div className="glass-card disclaimer-card">
+      <p className="disclaimer-title">
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style={{ flex: "none" }}>
+          <path d="M10 2 L18 17 H2 Z" stroke="#D69A3C" strokeWidth="1.5" strokeLinejoin="round" />
+          <path d="M10 8v4" stroke="#D69A3C" strokeWidth="1.5" strokeLinecap="round" />
+          <circle cx="10" cy="14.5" r="0.9" fill="#D69A3C" />
+        </svg>
+        Why is R² this high — and is it overfitting?
+      </p>
+      <p className="disclaimer-body">
+        No. A near-perfect R² is a fair reason for suspicion, so we checked it four ways instead
+        of just trusting it: <strong>train / validation / test R² are all ≈0.999 with no gap</strong> (overfitting
+        means train performance is much higher than held-out — that gap doesn't exist here);
+        <strong> 5-fold cross-validation</strong> gives the same score every time; a <strong>permutation
+        test</strong> (shuffling the target and refitting) collapses R² to ~0.03, ruling out a leak or
+        bug; and Ridge's own coefficients recover a clean, human-readable <strong>price list</strong> per
+        service. The real explanation: this telecom's billing is close to a fixed rate card —
+        within an identical service plan, bills vary by ~$1 on average — so the task is closer to
+        "reverse-engineer a price list" than "predict a noisy outcome." That's why we use this
+        model as a <strong>pricing sanity check</strong>, not evidence of a hard prediction problem solved.
+      </p>
+    </div>
+  );
+}
+
 function Board({ title, metricLabel, rows, columns, metricKey, winner, winnerReason, fmt }) {
   const max = Math.max(...rows.map((r) => r[metricKey]));
 
@@ -115,6 +142,7 @@ export default function Leaderboard() {
           winnerReason={regression.winner_reason}
           fmt={(v) => v.toFixed(3)}
         />
+        <OverfittingDisclaimer />
       </div>
     </>
   );

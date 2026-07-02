@@ -578,8 +578,37 @@ print(f"XGBoost  train_R2={train_r2:.3f}  val_R2={val_r2:.3f}")
 
 ## 11. Benchmark leaderboard & honest evaluation (test set)
 
-The test set has not been touched by any model or tuning step until now. Every model below is
-evaluated on it exactly once, for a fair final comparison.
+The test set has not been touched by any model or tuning step until now. To keep it that way, the
+**winning model for each task is selected using the validation set**, not the test set — the test
+set is used only to report final, honest performance for whichever model validation already
+picked, exactly once. Picking a winner directly from test-set numbers is a subtle second use of
+supposedly-held-out data (it's not the same as leakage, but it does mean the reported test score
+is no longer a fully unbiased read of real-world performance) — selecting on validation instead
+avoids that.
+
+### 11.0 Selecting the winner on the validation set
+
+```{python}
+#| label: model-selection-on-validation
+from sklearn.metrics import roc_auc_score
+
+clf_val_scores = {}
+for name, pipe in clf_models.items():
+    probs_val = pipe.predict_proba(X_clf_val)[:, 1] if hasattr(pipe, "predict_proba") else None
+    clf_val_scores[name] = roc_auc_score(y_clf_val, probs_val) if probs_val is not None else float("nan")
+
+reg_val_scores = {}
+for name, pipe in reg_models.items():
+    reg_val_scores[name] = r2_score(y_reg_val, pipe.predict(X_reg_val))
+
+best_clf_name = max(clf_val_scores, key=clf_val_scores.get)
+best_reg_name = max(reg_val_scores, key=reg_val_scores.get)
+
+print("Validation ROC-AUC by model:", {k: round(v, 4) for k, v in clf_val_scores.items()})
+print(f"-> selected winner (classification): {best_clf_name}")
+print("Validation R2 by model:       ", {k: round(v, 4) for k, v in reg_val_scores.items()})
+print(f"-> selected winner (regression):    {best_reg_name}")
+```
 
 ### 11.1 Classification leaderboard
 
@@ -606,7 +635,6 @@ clf_leaderboard_df
 
 ```{python}
 #| label: clf-confusion-matrix
-best_clf_name = clf_leaderboard_df["roc_auc"].idxmax()
 best_clf_pipe = clf_models[best_clf_name]
 cm = confusion_matrix(y_clf_test, best_clf_pipe.predict(X_clf_test))
 
@@ -621,10 +649,14 @@ plt.show()
 **Honest read:** every model beats the `Dummy` baseline (which by construction gets
 `accuracy ≈ 1 - churn_rate ≈ 0.735` but `precision`/`recall`/`f1` of 0 for the churn class,
 since it never predicts churn at all — a reminder that accuracy alone would have hidden how
-useless the baseline actually is here). **`{python} best_clf_name`** has the best ROC-AUC on the test
-set. The gap between it and Logistic Regression is real but not dramatic — this is a dataset
-where a well-regularized linear model is already a strong contender, which is a useful, honest
-finding in itself (not every problem needs the most complex model to get most of the value).
+useless the baseline actually is here). **`{python} best_clf_name`** was selected on the
+validation set (Section 11.0) and confirmed here on test. Its test ROC-AUC (0.837) and XGBoost's
+(0.832) are separated by 0.005 — on a ~1,400-row test set that gap is not statistically
+meaningful (bootstrapped confidence intervals for the two would overlap substantially), so the
+honest description is **effectively tied**, not "Logistic Regression wins." We select the simpler,
+more interpretable linear model as the practical choice given that tie, which is itself a useful
+finding: this is a dataset where a well-regularized linear model already captures most of the
+available signal, and more model complexity buys essentially nothing.
 
 ### 11.2 Regression leaderboard
 
@@ -646,7 +678,6 @@ reg_leaderboard_df
 
 ```{python}
 #| label: reg-pred-vs-actual
-best_reg_name = reg_leaderboard_df["R2"].idxmax()
 best_reg_pipe = reg_models[best_reg_name]
 preds_best = best_reg_pipe.predict(X_reg_test)
 
@@ -662,11 +693,14 @@ plt.show()
 ```
 
 **Honest read:** the `Dummy` regressor (predicts the mean every time) sets the floor with
-`R2 ≈ 0`. **`{python} best_reg_name`** achieves the best test R² — the predicted-vs-actual plot shows
-points tracking the diagonal closely, with slightly more scatter at the high end
-(`MonthlyCharges` > ~$100), meaning the model is more confident about typical bills than
-unusually large ones (likely because there are simply fewer high-bill examples to learn from,
-per the multi-modal distribution seen in Section 4.2).
+`R2 ≈ 0`. **`{python} best_reg_name`** was selected on the validation set (Section 11.0) and
+confirmed here on test — the predicted-vs-actual plot shows points tracking the diagonal closely,
+with slightly more scatter at the high end (`MonthlyCharges` > ~$100), meaning the model is more
+confident about typical bills than unusually large ones (likely because there are simply fewer
+high-bill examples to learn from, per the multi-modal distribution seen in Section 4.2). Ridge and
+XGBoost round to the same test R² (0.999) — another effective tie, not a real margin — so we again
+prefer the simpler, fully interpretable linear model (see the recovered rate card in
+Section 11.3) rather than crediting XGBoost with discovering something Ridge missed.
 
 **A near-perfect R² (~0.999) deserves scrutiny, not celebration at face value** — this is
 usually the first sign of leakage. We checked it directly: grouping customers by their exact

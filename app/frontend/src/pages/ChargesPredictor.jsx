@@ -51,7 +51,7 @@ export default function ChargesPredictor() {
     <>
       <div className="page-header">
         <h1>What should this customer's monthly bill be?</h1>
-        <p>Model: Ridge Regression — best R² on test set. A pricing sanity check, not a billing replacement.</p>
+        <p>Model: Ridge Regression — effectively tied with XGBoost, preferred for interpretability. A pricing sanity check, not a billing replacement.</p>
       </div>
 
       <div className="predictor-layout">

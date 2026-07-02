@@ -62,7 +62,7 @@ export default function ChurnPredictor() {
     <>
       <div className="page-header">
         <h1>Will this customer churn?</h1>
-        <p>Model: Logistic Regression — best ROC-AUC on test set</p>
+        <p>Model: Logistic Regression — effectively tied with XGBoost, preferred for simplicity</p>
       </div>
 
       <div className="predictor-layout">

@@ -9,7 +9,7 @@
       { "model": "XGBoost", "accuracy": 0.791, "precision": 0.643, "recall": 0.476, "f1": 0.547, "roc_auc": 0.832 }
     ],
     "winner": "Logistic Regression",
-    "winner_reason": "Best ROC-AUC (0.837) on the untouched test set; edged out XGBoost (0.832) by a small but real margin."
+    "winner_reason": "Selected on the validation set (ROC-AUC 0.862 vs XGBoost 0.859), confirmed on the untouched test set (0.837 vs 0.832) — a 0.005 gap on ~1,400 test rows is not statistically meaningful, so this is an effective tie. We prefer the simpler, more interpretable linear model given that tie."
   },
   "regression": {
     "target": "MonthlyCharges",
@@ -21,6 +21,6 @@
       { "model": "XGBoost", "r2": 0.999, "mae": 0.81, "rmse": 1.07 }
     ],
     "winner": "Ridge",
-    "winner_reason": "Best R2 on test set. Verified this is not leakage: within an identical service plan, MonthlyCharges varies by only ~$1 on average, so billing is close to a deterministic function of the plan features used here."
+    "winner_reason": "Selected on the validation set (R2 0.9989 vs XGBoost 0.9988) — an effective tie, so we prefer the simpler, fully interpretable linear model. Verified the high R2 is not leakage or overfitting via four checks: train/val/test scores are nearly identical, 5-fold CV is stable, a permutation test on the target collapses R2 to ~0.03, and Ridge's coefficients recover a sensible, auditable rate card (within an identical service plan, MonthlyCharges varies by only ~$1 on average — billing is close to a deterministic function of plan features)."
   }
 }

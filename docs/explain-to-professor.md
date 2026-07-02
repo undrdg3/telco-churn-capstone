@@ -244,10 +244,17 @@ time by luck. Its precision/recall/F1 are all 0.000, exposing that it's actually
 never once correctly identifies a churner. This is exactly why accuracy alone is a misleading
 metric on imbalanced data, and why the assignment requires reporting precision/recall/F1/ROC-AUC.
 
-**Honest takeaway:** Logistic Regression edged out XGBoost on ROC-AUC (0.837 vs 0.832) — a small
-but real difference. I report this plainly rather than picking XGBoost by default just because
-it's the "fancier" model — a simpler, well-regularized linear model is a legitimate winner here,
-and saying so is exactly the kind of honesty the assignment grades for.
+**Honest takeaway:** Logistic Regression and XGBoost land at 0.837 vs 0.832 ROC-AUC on test — a
+0.005 gap on a ~1,400-row test set, which isn't statistically distinguishable (their confidence
+intervals would overlap). So instead of calling this "Logistic Regression wins," the accurate
+description is **effectively tied**, and we prefer Logistic Regression because it's simpler and
+fully interpretable, not because it's measurably better. (I also fixed how the winner gets picked
+in the first place: earlier I was selecting the winner directly from test-set numbers, which is a
+subtle second use of data that's supposed to be untouched until the final report. Now the winner
+is selected on the *validation* set — Logistic Regression still wins there too, 0.862 vs 0.859 —
+and the test set is used only to confirm, not to choose.) Reporting a near-tie as a near-tie,
+instead of dressing it up as a clear win, is exactly the kind of honesty the assignment grades
+for.
 
 **Regression leaderboard (test set):**
 

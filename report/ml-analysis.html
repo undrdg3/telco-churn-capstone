@@ -2237,6 +2237,7 @@ vertical-align: -.125em;
   <li><a href="#model-ladder-regression-monthlycharges" id="toc-model-ladder-regression-monthlycharges" class="nav-link" data-scroll-target="#model-ladder-regression-monthlycharges">10. Model ladder — Regression (<code>MonthlyCharges</code>)</a></li>
   <li><a href="#benchmark-leaderboard-honest-evaluation-test-set" id="toc-benchmark-leaderboard-honest-evaluation-test-set" class="nav-link" data-scroll-target="#benchmark-leaderboard-honest-evaluation-test-set">11. Benchmark leaderboard &amp; honest evaluation (test set)</a>
   <ul class="collapse">
+  <li><a href="#selecting-the-winner-on-the-validation-set" id="toc-selecting-the-winner-on-the-validation-set" class="nav-link" data-scroll-target="#selecting-the-winner-on-the-validation-set">11.0 Selecting the winner on the validation set</a></li>
   <li><a href="#classification-leaderboard" id="toc-classification-leaderboard" class="nav-link" data-scroll-target="#classification-leaderboard">11.1 Classification leaderboard</a></li>
   <li><a href="#regression-leaderboard" id="toc-regression-leaderboard" class="nav-link" data-scroll-target="#regression-leaderboard">11.2 Regression leaderboard</a></li>
   <li><a href="#ruling-out-overfitting-in-the-regression-model" id="toc-ruling-out-overfitting-in-the-regression-model" class="nav-link" data-scroll-target="#ruling-out-overfitting-in-the-regression-model">11.3 Ruling out overfitting in the regression model</a></li>
@@ -3321,31 +3322,63 @@ XGBoost  train_R2=0.999  val_R2=0.999</code></pre>
 </section>
 <section id="benchmark-leaderboard-honest-evaluation-test-set" class="level2">
 <h2 class="anchored" data-anchor-id="benchmark-leaderboard-honest-evaluation-test-set">11. Benchmark leaderboard &amp; honest evaluation (test set)</h2>
-<p>The test set has not been touched by any model or tuning step until now. Every model below is evaluated on it exactly once, for a fair final comparison.</p>
-<section id="classification-leaderboard" class="level3">
-<h3 class="anchored" data-anchor-id="classification-leaderboard">11.1 Classification leaderboard</h3>
-<div id="cell-clf-leaderboard" class="cell" data-execution_count="28">
+<p>The test set has not been touched by any model or tuning step until now. To keep it that way, the <strong>winning model for each task is selected using the validation set</strong>, not the test set — the test set is used only to report final, honest performance for whichever model validation already picked, exactly once. Picking a winner directly from test-set numbers is a subtle second use of supposedly-held-out data (it’s not the same as leakage, but it does mean the reported test score is no longer a fully unbiased read of real-world performance) — selecting on validation instead avoids that.</p>
+<section id="selecting-the-winner-on-the-validation-set" class="level3">
+<h3 class="anchored" data-anchor-id="selecting-the-winner-on-the-validation-set">11.0 Selecting the winner on the validation set</h3>
+<div id="model-selection-on-validation" class="cell" data-execution_count="28">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.metrics <span class="im">import</span> precision_score, recall_score, roc_auc_score, confusion_matrix</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.metrics <span class="im">import</span> roc_auc_score</span>
 <span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a>clf_leaderboard <span class="op">=</span> []</span>
+<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a>clf_val_scores <span class="op">=</span> {}</span>
 <span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> name, pipe <span class="kw">in</span> clf_models.items():</span>
-<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a>    preds <span class="op">=</span> pipe.predict(X_clf_test)</span>
-<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a>    probs <span class="op">=</span> pipe.predict_proba(X_clf_test)[:, <span class="dv">1</span>] <span class="cf">if</span> <span class="bu">hasattr</span>(pipe, <span class="st">&quot;predict_proba&quot;</span>) <span class="cf">else</span> <span class="va">None</span></span>
-<span id="cb43-7"><a href="#cb43-7" aria-hidden="true" tabindex="-1"></a>    clf_leaderboard.append({</span>
-<span id="cb43-8"><a href="#cb43-8" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;model&quot;</span>: name,</span>
-<span id="cb43-9"><a href="#cb43-9" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;accuracy&quot;</span>: accuracy_score(y_clf_test, preds),</span>
-<span id="cb43-10"><a href="#cb43-10" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;precision&quot;</span>: precision_score(y_clf_test, preds, zero_division<span class="op">=</span><span class="dv">0</span>),</span>
-<span id="cb43-11"><a href="#cb43-11" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;recall&quot;</span>: recall_score(y_clf_test, preds, zero_division<span class="op">=</span><span class="dv">0</span>),</span>
-<span id="cb43-12"><a href="#cb43-12" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;f1&quot;</span>: f1_score(y_clf_test, preds, zero_division<span class="op">=</span><span class="dv">0</span>),</span>
-<span id="cb43-13"><a href="#cb43-13" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;roc_auc&quot;</span>: roc_auc_score(y_clf_test, probs) <span class="cf">if</span> probs <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span> <span class="cf">else</span> <span class="bu">float</span>(<span class="st">&quot;nan&quot;</span>),</span>
-<span id="cb43-14"><a href="#cb43-14" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb43-15"><a href="#cb43-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb43-16"><a href="#cb43-16" aria-hidden="true" tabindex="-1"></a>clf_leaderboard_df <span class="op">=</span> pd.DataFrame(clf_leaderboard).set_index(<span class="st">&quot;model&quot;</span>).<span class="bu">round</span>(<span class="dv">3</span>)</span>
-<span id="cb43-17"><a href="#cb43-17" aria-hidden="true" tabindex="-1"></a>clf_leaderboard_df</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a>    probs_val <span class="op">=</span> pipe.predict_proba(X_clf_val)[:, <span class="dv">1</span>] <span class="cf">if</span> <span class="bu">hasattr</span>(pipe, <span class="st">&quot;predict_proba&quot;</span>) <span class="cf">else</span> <span class="va">None</span></span>
+<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a>    clf_val_scores[name] <span class="op">=</span> roc_auc_score(y_clf_val, probs_val) <span class="cf">if</span> probs_val <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span> <span class="cf">else</span> <span class="bu">float</span>(<span class="st">&quot;nan&quot;</span>)</span>
+<span id="cb43-7"><a href="#cb43-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-8"><a href="#cb43-8" aria-hidden="true" tabindex="-1"></a>reg_val_scores <span class="op">=</span> {}</span>
+<span id="cb43-9"><a href="#cb43-9" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> name, pipe <span class="kw">in</span> reg_models.items():</span>
+<span id="cb43-10"><a href="#cb43-10" aria-hidden="true" tabindex="-1"></a>    reg_val_scores[name] <span class="op">=</span> r2_score(y_reg_val, pipe.predict(X_reg_val))</span>
+<span id="cb43-11"><a href="#cb43-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-12"><a href="#cb43-12" aria-hidden="true" tabindex="-1"></a>best_clf_name <span class="op">=</span> <span class="bu">max</span>(clf_val_scores, key<span class="op">=</span>clf_val_scores.get)</span>
+<span id="cb43-13"><a href="#cb43-13" aria-hidden="true" tabindex="-1"></a>best_reg_name <span class="op">=</span> <span class="bu">max</span>(reg_val_scores, key<span class="op">=</span>reg_val_scores.get)</span>
+<span id="cb43-14"><a href="#cb43-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-15"><a href="#cb43-15" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;Validation ROC-AUC by model:&quot;</span>, {k: <span class="bu">round</span>(v, <span class="dv">4</span>) <span class="cf">for</span> k, v <span class="kw">in</span> clf_val_scores.items()})</span>
+<span id="cb43-16"><a href="#cb43-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;-&gt; selected winner (classification): </span><span class="sc">{</span>best_clf_name<span class="sc">}</span><span class="ss">&quot;</span>)</span>
+<span id="cb43-17"><a href="#cb43-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;Validation R2 by model:       &quot;</span>, {k: <span class="bu">round</span>(v, <span class="dv">4</span>) <span class="cf">for</span> k, v <span class="kw">in</span> reg_val_scores.items()})</span>
+<span id="cb43-18"><a href="#cb43-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;-&gt; selected winner (regression):    </span><span class="sc">{</span>best_reg_name<span class="sc">}</span><span class="ss">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<div id="clf-leaderboard" class="cell-output cell-output-display" data-execution_count="28">
+<div class="cell-output cell-output-stdout">
+<pre><code>Validation ROC-AUC by model: {&#39;Dummy&#39;: 0.5, &#39;Logistic Regression&#39;: 0.8617, &#39;Decision Tree&#39;: 0.6739, &#39;XGBoost&#39;: 0.8585}
+-&gt; selected winner (classification): Logistic Regression
+Validation R2 by model:        {&#39;Dummy&#39;: -0.0001, &#39;Ridge&#39;: 0.9989, &#39;Decision Tree&#39;: 0.9976, &#39;XGBoost&#39;: 0.9988}
+-&gt; selected winner (regression):    Ridge</code></pre>
+</div>
+</div>
+</section>
+<section id="classification-leaderboard" class="level3">
+<h3 class="anchored" data-anchor-id="classification-leaderboard">11.1 Classification leaderboard</h3>
+<div id="cell-clf-leaderboard" class="cell" data-execution_count="29">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.metrics <span class="im">import</span> precision_score, recall_score, roc_auc_score, confusion_matrix</span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>clf_leaderboard <span class="op">=</span> []</span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> name, pipe <span class="kw">in</span> clf_models.items():</span>
+<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a>    preds <span class="op">=</span> pipe.predict(X_clf_test)</span>
+<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a>    probs <span class="op">=</span> pipe.predict_proba(X_clf_test)[:, <span class="dv">1</span>] <span class="cf">if</span> <span class="bu">hasattr</span>(pipe, <span class="st">&quot;predict_proba&quot;</span>) <span class="cf">else</span> <span class="va">None</span></span>
+<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a>    clf_leaderboard.append({</span>
+<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;model&quot;</span>: name,</span>
+<span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;accuracy&quot;</span>: accuracy_score(y_clf_test, preds),</span>
+<span id="cb45-10"><a href="#cb45-10" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;precision&quot;</span>: precision_score(y_clf_test, preds, zero_division<span class="op">=</span><span class="dv">0</span>),</span>
+<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;recall&quot;</span>: recall_score(y_clf_test, preds, zero_division<span class="op">=</span><span class="dv">0</span>),</span>
+<span id="cb45-12"><a href="#cb45-12" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;f1&quot;</span>: f1_score(y_clf_test, preds, zero_division<span class="op">=</span><span class="dv">0</span>),</span>
+<span id="cb45-13"><a href="#cb45-13" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;roc_auc&quot;</span>: roc_auc_score(y_clf_test, probs) <span class="cf">if</span> probs <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span> <span class="cf">else</span> <span class="bu">float</span>(<span class="st">&quot;nan&quot;</span>),</span>
+<span id="cb45-14"><a href="#cb45-14" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb45-15"><a href="#cb45-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb45-16"><a href="#cb45-16" aria-hidden="true" tabindex="-1"></a>clf_leaderboard_df <span class="op">=</span> pd.DataFrame(clf_leaderboard).set_index(<span class="st">&quot;model&quot;</span>).<span class="bu">round</span>(<span class="dv">3</span>)</span>
+<span id="cb45-17"><a href="#cb45-17" aria-hidden="true" tabindex="-1"></a>clf_leaderboard_df</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div id="clf-leaderboard" class="cell-output cell-output-display" data-execution_count="29">
 <div>
 
 
@@ -3407,19 +3440,18 @@ XGBoost  train_R2=0.999  val_R2=0.999</code></pre>
 </div>
 </div>
 </div>
-<div id="cell-clf-confusion-matrix" class="cell" data-execution_count="29">
+<div id="cell-clf-confusion-matrix" class="cell" data-execution_count="30">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>best_clf_name <span class="op">=</span> clf_leaderboard_df[<span class="st">&quot;roc_auc&quot;</span>].idxmax()</span>
-<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>best_clf_pipe <span class="op">=</span> clf_models[best_clf_name]</span>
-<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>cm <span class="op">=</span> confusion_matrix(y_clf_test, best_clf_pipe.predict(X_clf_test))</span>
-<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(figsize<span class="op">=</span>(<span class="dv">4</span>, <span class="dv">4</span>))</span>
-<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a>sns.heatmap(cm, annot<span class="op">=</span><span class="va">True</span>, fmt<span class="op">=</span><span class="st">&quot;d&quot;</span>, cmap<span class="op">=</span><span class="st">&quot;Blues&quot;</span>, xticklabels<span class="op">=</span>[<span class="st">&quot;No churn&quot;</span>, <span class="st">&quot;Churn&quot;</span>], yticklabels<span class="op">=</span>[<span class="st">&quot;No churn&quot;</span>, <span class="st">&quot;Churn&quot;</span>], ax<span class="op">=</span>ax)</span>
-<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a>ax.set_xlabel(<span class="st">&quot;Predicted&quot;</span>)</span>
-<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a>ax.set_ylabel(<span class="st">&quot;Actual&quot;</span>)</span>
-<span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a>ax.set_title(<span class="ss">f&quot;Confusion matrix — </span><span class="sc">{</span>best_clf_name<span class="sc">}</span><span class="ss"> (test set)&quot;</span>)</span>
-<span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a>best_clf_pipe <span class="op">=</span> clf_models[best_clf_name]</span>
+<span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a>cm <span class="op">=</span> confusion_matrix(y_clf_test, best_clf_pipe.predict(X_clf_test))</span>
+<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-4"><a href="#cb46-4" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(figsize<span class="op">=</span>(<span class="dv">4</span>, <span class="dv">4</span>))</span>
+<span id="cb46-5"><a href="#cb46-5" aria-hidden="true" tabindex="-1"></a>sns.heatmap(cm, annot<span class="op">=</span><span class="va">True</span>, fmt<span class="op">=</span><span class="st">&quot;d&quot;</span>, cmap<span class="op">=</span><span class="st">&quot;Blues&quot;</span>, xticklabels<span class="op">=</span>[<span class="st">&quot;No churn&quot;</span>, <span class="st">&quot;Churn&quot;</span>], yticklabels<span class="op">=</span>[<span class="st">&quot;No churn&quot;</span>, <span class="st">&quot;Churn&quot;</span>], ax<span class="op">=</span>ax)</span>
+<span id="cb46-6"><a href="#cb46-6" aria-hidden="true" tabindex="-1"></a>ax.set_xlabel(<span class="st">&quot;Predicted&quot;</span>)</span>
+<span id="cb46-7"><a href="#cb46-7" aria-hidden="true" tabindex="-1"></a>ax.set_ylabel(<span class="st">&quot;Actual&quot;</span>)</span>
+<span id="cb46-8"><a href="#cb46-8" aria-hidden="true" tabindex="-1"></a>ax.set_title(<span class="ss">f&quot;Confusion matrix — </span><span class="sc">{</span>best_clf_name<span class="sc">}</span><span class="ss"> (test set)&quot;</span>)</span>
+<span id="cb46-9"><a href="#cb46-9" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-display">
 <div>
@@ -3429,27 +3461,27 @@ XGBoost  train_R2=0.999  val_R2=0.999</code></pre>
 </div>
 </div>
 </div>
-<p><strong>Honest read:</strong> every model beats the <code>Dummy</code> baseline (which by construction gets <code>accuracy ≈ 1 - churn_rate ≈ 0.735</code> but <code>precision</code>/<code>recall</code>/<code>f1</code> of 0 for the churn class, since it never predicts churn at all — a reminder that accuracy alone would have hidden how useless the baseline actually is here). <strong>Logistic Regression</strong> has the best ROC-AUC on the test set. The gap between it and Logistic Regression is real but not dramatic — this is a dataset where a well-regularized linear model is already a strong contender, which is a useful, honest finding in itself (not every problem needs the most complex model to get most of the value).</p>
+<p><strong>Honest read:</strong> every model beats the <code>Dummy</code> baseline (which by construction gets <code>accuracy ≈ 1 - churn_rate ≈ 0.735</code> but <code>precision</code>/<code>recall</code>/<code>f1</code> of 0 for the churn class, since it never predicts churn at all — a reminder that accuracy alone would have hidden how useless the baseline actually is here). <strong>Logistic Regression</strong> was selected on the validation set (Section 11.0) and confirmed here on test. Its test ROC-AUC (0.837) and XGBoost’s (0.832) are separated by 0.005 — on a ~1,400-row test set that gap is not statistically meaningful (bootstrapped confidence intervals for the two would overlap substantially), so the honest description is <strong>effectively tied</strong>, not “Logistic Regression wins.” We select the simpler, more interpretable linear model as the practical choice given that tie, which is itself a useful finding: this is a dataset where a well-regularized linear model already captures most of the available signal, and more model complexity buys essentially nothing.</p>
 </section>
 <section id="regression-leaderboard" class="level3">
 <h3 class="anchored" data-anchor-id="regression-leaderboard">11.2 Regression leaderboard</h3>
-<div id="cell-reg-leaderboard" class="cell" data-execution_count="30">
+<div id="cell-reg-leaderboard" class="cell" data-execution_count="31">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>reg_leaderboard <span class="op">=</span> []</span>
-<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> name, pipe <span class="kw">in</span> reg_models.items():</span>
-<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>    preds <span class="op">=</span> pipe.predict(X_reg_test)</span>
-<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a>    reg_leaderboard.append({</span>
-<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;model&quot;</span>: name,</span>
-<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;R2&quot;</span>: r2_score(y_reg_test, preds),</span>
-<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;MAE&quot;</span>: mean_absolute_error(y_reg_test, preds),</span>
-<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;RMSE&quot;</span>: root_mean_squared_error(y_reg_test, preds),</span>
-<span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb45-10"><a href="#cb45-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a>reg_leaderboard_df <span class="op">=</span> pd.DataFrame(reg_leaderboard).set_index(<span class="st">&quot;model&quot;</span>).<span class="bu">round</span>(<span class="dv">3</span>)</span>
-<span id="cb45-12"><a href="#cb45-12" aria-hidden="true" tabindex="-1"></a>reg_leaderboard_df</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb47"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>reg_leaderboard <span class="op">=</span> []</span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> name, pipe <span class="kw">in</span> reg_models.items():</span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>    preds <span class="op">=</span> pipe.predict(X_reg_test)</span>
+<span id="cb47-4"><a href="#cb47-4" aria-hidden="true" tabindex="-1"></a>    reg_leaderboard.append({</span>
+<span id="cb47-5"><a href="#cb47-5" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;model&quot;</span>: name,</span>
+<span id="cb47-6"><a href="#cb47-6" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;R2&quot;</span>: r2_score(y_reg_test, preds),</span>
+<span id="cb47-7"><a href="#cb47-7" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;MAE&quot;</span>: mean_absolute_error(y_reg_test, preds),</span>
+<span id="cb47-8"><a href="#cb47-8" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;RMSE&quot;</span>: root_mean_squared_error(y_reg_test, preds),</span>
+<span id="cb47-9"><a href="#cb47-9" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb47-10"><a href="#cb47-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-11"><a href="#cb47-11" aria-hidden="true" tabindex="-1"></a>reg_leaderboard_df <span class="op">=</span> pd.DataFrame(reg_leaderboard).set_index(<span class="st">&quot;model&quot;</span>).<span class="bu">round</span>(<span class="dv">3</span>)</span>
+<span id="cb47-12"><a href="#cb47-12" aria-hidden="true" tabindex="-1"></a>reg_leaderboard_df</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<div id="reg-leaderboard" class="cell-output cell-output-display" data-execution_count="30">
+<div id="reg-leaderboard" class="cell-output cell-output-display" data-execution_count="31">
 <div>
 
 
@@ -3499,22 +3531,21 @@ XGBoost  train_R2=0.999  val_R2=0.999</code></pre>
 </div>
 </div>
 </div>
-<div id="cell-reg-pred-vs-actual" class="cell" data-execution_count="31">
+<div id="cell-reg-pred-vs-actual" class="cell" data-execution_count="32">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a>best_reg_name <span class="op">=</span> reg_leaderboard_df[<span class="st">&quot;R2&quot;</span>].idxmax()</span>
-<span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a>best_reg_pipe <span class="op">=</span> reg_models[best_reg_name]</span>
-<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a>preds_best <span class="op">=</span> best_reg_pipe.predict(X_reg_test)</span>
-<span id="cb46-4"><a href="#cb46-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb46-5"><a href="#cb46-5" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(figsize<span class="op">=</span>(<span class="dv">5</span>, <span class="dv">5</span>))</span>
-<span id="cb46-6"><a href="#cb46-6" aria-hidden="true" tabindex="-1"></a>ax.scatter(y_reg_test, preds_best, alpha<span class="op">=</span><span class="fl">0.3</span>, s<span class="op">=</span><span class="dv">15</span>)</span>
-<span id="cb46-7"><a href="#cb46-7" aria-hidden="true" tabindex="-1"></a>lims <span class="op">=</span> [y_reg_test.<span class="bu">min</span>(), y_reg_test.<span class="bu">max</span>()]</span>
-<span id="cb46-8"><a href="#cb46-8" aria-hidden="true" tabindex="-1"></a>ax.plot(lims, lims, <span class="st">&quot;r--&quot;</span>, label<span class="op">=</span><span class="st">&quot;Perfect prediction&quot;</span>)</span>
-<span id="cb46-9"><a href="#cb46-9" aria-hidden="true" tabindex="-1"></a>ax.set_xlabel(<span class="st">&quot;Actual MonthlyCharges&quot;</span>)</span>
-<span id="cb46-10"><a href="#cb46-10" aria-hidden="true" tabindex="-1"></a>ax.set_ylabel(<span class="st">&quot;Predicted MonthlyCharges&quot;</span>)</span>
-<span id="cb46-11"><a href="#cb46-11" aria-hidden="true" tabindex="-1"></a>ax.set_title(<span class="ss">f&quot;Predicted vs. actual — </span><span class="sc">{</span>best_reg_name<span class="sc">}</span><span class="ss"> (test set)&quot;</span>)</span>
-<span id="cb46-12"><a href="#cb46-12" aria-hidden="true" tabindex="-1"></a>ax.legend()</span>
-<span id="cb46-13"><a href="#cb46-13" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a>best_reg_pipe <span class="op">=</span> reg_models[best_reg_name]</span>
+<span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a>preds_best <span class="op">=</span> best_reg_pipe.predict(X_reg_test)</span>
+<span id="cb48-3"><a href="#cb48-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb48-4"><a href="#cb48-4" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(figsize<span class="op">=</span>(<span class="dv">5</span>, <span class="dv">5</span>))</span>
+<span id="cb48-5"><a href="#cb48-5" aria-hidden="true" tabindex="-1"></a>ax.scatter(y_reg_test, preds_best, alpha<span class="op">=</span><span class="fl">0.3</span>, s<span class="op">=</span><span class="dv">15</span>)</span>
+<span id="cb48-6"><a href="#cb48-6" aria-hidden="true" tabindex="-1"></a>lims <span class="op">=</span> [y_reg_test.<span class="bu">min</span>(), y_reg_test.<span class="bu">max</span>()]</span>
+<span id="cb48-7"><a href="#cb48-7" aria-hidden="true" tabindex="-1"></a>ax.plot(lims, lims, <span class="st">&quot;r--&quot;</span>, label<span class="op">=</span><span class="st">&quot;Perfect prediction&quot;</span>)</span>
+<span id="cb48-8"><a href="#cb48-8" aria-hidden="true" tabindex="-1"></a>ax.set_xlabel(<span class="st">&quot;Actual MonthlyCharges&quot;</span>)</span>
+<span id="cb48-9"><a href="#cb48-9" aria-hidden="true" tabindex="-1"></a>ax.set_ylabel(<span class="st">&quot;Predicted MonthlyCharges&quot;</span>)</span>
+<span id="cb48-10"><a href="#cb48-10" aria-hidden="true" tabindex="-1"></a>ax.set_title(<span class="ss">f&quot;Predicted vs. actual — </span><span class="sc">{</span>best_reg_name<span class="sc">}</span><span class="ss"> (test set)&quot;</span>)</span>
+<span id="cb48-11"><a href="#cb48-11" aria-hidden="true" tabindex="-1"></a>ax.legend()</span>
+<span id="cb48-12"><a href="#cb48-12" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-display">
 <div>
@@ -3524,19 +3555,19 @@ XGBoost  train_R2=0.999  val_R2=0.999</code></pre>
 </div>
 </div>
 </div>
-<p><strong>Honest read:</strong> the <code>Dummy</code> regressor (predicts the mean every time) sets the floor with <code>R2 ≈ 0</code>. <strong>Ridge</strong> achieves the best test R² — the predicted-vs-actual plot shows points tracking the diagonal closely, with slightly more scatter at the high end (<code>MonthlyCharges</code> &gt; ~$100), meaning the model is more confident about typical bills than unusually large ones (likely because there are simply fewer high-bill examples to learn from, per the multi-modal distribution seen in Section 4.2).</p>
+<p><strong>Honest read:</strong> the <code>Dummy</code> regressor (predicts the mean every time) sets the floor with <code>R2 ≈ 0</code>. <strong>Ridge</strong> was selected on the validation set (Section 11.0) and confirmed here on test — the predicted-vs-actual plot shows points tracking the diagonal closely, with slightly more scatter at the high end (<code>MonthlyCharges</code> &gt; ~$100), meaning the model is more confident about typical bills than unusually large ones (likely because there are simply fewer high-bill examples to learn from, per the multi-modal distribution seen in Section 4.2). Ridge and XGBoost round to the same test R² (0.999) — another effective tie, not a real margin — so we again prefer the simpler, fully interpretable linear model (see the recovered rate card in Section 11.3) rather than crediting XGBoost with discovering something Ridge missed.</p>
 <p><strong>A near-perfect R² (~0.999) deserves scrutiny, not celebration at face value</strong> — this is usually the first sign of leakage. We checked it directly: grouping customers by their exact service configuration (<code>InternetService</code>, all six add-ons, <code>Contract</code>, <code>PhoneService</code>, <code>MultipleLines</code>) and looking at the spread of <code>MonthlyCharges</code> <em>within</em> each group gives a standard deviation of about <strong>$1</strong> on average. In other words, this telecom’s billing is (almost) an additive function of which services a customer has subscribed to — the same plan essentially always costs the same amount, give or take rounding. None of the regression features are derived from <code>MonthlyCharges</code> or <code>TotalCharges</code> (both were explicitly excluded in Section 6 for exactly this reason), so this is <strong>not leakage</strong> — it’s a genuine, checkable property of how this company prices its services, and it means the regression task is close to solvable by construction rather than being a hard prediction problem. We report this transparently rather than presenting the R² as evidence of a sophisticated model: a simple <code>Ridge</code> regression gets nearly the same score as <code>XGBoost</code> here precisely because the underlying relationship is close to linear/additive, not because either model discovered something subtle.</p>
-<div id="regression-sanity-check" class="cell" data-execution_count="32">
+<div id="regression-sanity-check" class="cell" data-execution_count="33">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb47"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>config_cols <span class="op">=</span> [</span>
-<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;InternetService&quot;</span>, <span class="st">&quot;OnlineSecurity&quot;</span>, <span class="st">&quot;OnlineBackup&quot;</span>, <span class="st">&quot;DeviceProtection&quot;</span>,</span>
-<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;TechSupport&quot;</span>, <span class="st">&quot;StreamingTV&quot;</span>, <span class="st">&quot;StreamingMovies&quot;</span>, <span class="st">&quot;PhoneService&quot;</span>,</span>
-<span id="cb47-4"><a href="#cb47-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;MultipleLines&quot;</span>, <span class="st">&quot;Contract&quot;</span>,</span>
-<span id="cb47-5"><a href="#cb47-5" aria-hidden="true" tabindex="-1"></a>]</span>
-<span id="cb47-6"><a href="#cb47-6" aria-hidden="true" tabindex="-1"></a>within_group_std <span class="op">=</span> df_feat.groupby(config_cols)[<span class="st">&quot;MonthlyCharges&quot;</span>].std()</span>
-<span id="cb47-7"><a href="#cb47-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Mean within-plan-configuration std of MonthlyCharges: $</span><span class="sc">{</span>within_group_std<span class="sc">.</span>mean()<span class="sc">:.2f}</span><span class="ss">&quot;</span>)</span>
-<span id="cb47-8"><a href="#cb47-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Share of configurations with std &lt; $1: </span><span class="sc">{</span>(within_group_std <span class="op">&lt;</span> <span class="dv">1</span>)<span class="sc">.</span>mean()<span class="sc">:.1%}</span><span class="ss">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb49"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>config_cols <span class="op">=</span> [</span>
+<span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;InternetService&quot;</span>, <span class="st">&quot;OnlineSecurity&quot;</span>, <span class="st">&quot;OnlineBackup&quot;</span>, <span class="st">&quot;DeviceProtection&quot;</span>,</span>
+<span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;TechSupport&quot;</span>, <span class="st">&quot;StreamingTV&quot;</span>, <span class="st">&quot;StreamingMovies&quot;</span>, <span class="st">&quot;PhoneService&quot;</span>,</span>
+<span id="cb49-4"><a href="#cb49-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;MultipleLines&quot;</span>, <span class="st">&quot;Contract&quot;</span>,</span>
+<span id="cb49-5"><a href="#cb49-5" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb49-6"><a href="#cb49-6" aria-hidden="true" tabindex="-1"></a>within_group_std <span class="op">=</span> df_feat.groupby(config_cols)[<span class="st">&quot;MonthlyCharges&quot;</span>].std()</span>
+<span id="cb49-7"><a href="#cb49-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Mean within-plan-configuration std of MonthlyCharges: $</span><span class="sc">{</span>within_group_std<span class="sc">.</span>mean()<span class="sc">:.2f}</span><span class="ss">&quot;</span>)</span>
+<span id="cb49-8"><a href="#cb49-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Share of configurations with std &lt; $1: </span><span class="sc">{</span>(within_group_std <span class="op">&lt;</span> <span class="dv">1</span>)<span class="sc">.</span>mean()<span class="sc">:.1%}</span><span class="ss">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>Mean within-plan-configuration std of MonthlyCharges: $1.03
@@ -3548,17 +3579,17 @@ Share of configurations with std &lt; $1: 38.3%</code></pre>
 <h3 class="anchored" data-anchor-id="ruling-out-overfitting-in-the-regression-model">11.3 Ruling out overfitting in the regression model</h3>
 <p>A test R² this close to 1.0 is unusual enough that the rate-card explanation above deserves independent proof, not just a plausible story. Overfitting has a precise definition — a model that fits training-set noise so well it fails to generalize, visible as a <strong>large gap between training and held-out performance</strong>. The four checks below test for that directly, rather than re-asserting the domain explanation.</p>
 <p><strong>Check 1 — train vs. validation vs. test R², side by side.</strong> If the winning model were overfitting, training performance would be noticeably higher than validation/test performance.</p>
-<div id="reg-overfitting-check-1" class="cell" data-execution_count="33">
+<div id="reg-overfitting-check-1" class="cell" data-execution_count="34">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb49"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>r2_train <span class="op">=</span> r2_score(y_reg_train, best_reg_pipe.predict(X_reg_train))</span>
-<span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a>r2_val <span class="op">=</span> r2_score(y_reg_val, best_reg_pipe.predict(X_reg_val))</span>
-<span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a>r2_test <span class="op">=</span> r2_score(y_reg_test, best_reg_pipe.predict(X_reg_test))</span>
-<span id="cb49-4"><a href="#cb49-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb49-5"><a href="#cb49-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Train R2:      </span><span class="sc">{</span>r2_train<span class="sc">:.4f}</span><span class="ss">&quot;</span>)</span>
-<span id="cb49-6"><a href="#cb49-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Validation R2: </span><span class="sc">{</span>r2_val<span class="sc">:.4f}</span><span class="ss">&quot;</span>)</span>
-<span id="cb49-7"><a href="#cb49-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Test R2:       </span><span class="sc">{</span>r2_test<span class="sc">:.4f}</span><span class="ss">&quot;</span>)</span>
-<span id="cb49-8"><a href="#cb49-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Train-test gap: </span><span class="sc">{</span>r2_train <span class="op">-</span> r2_test<span class="sc">:+.4f}</span><span class="ss">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb51"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a>r2_train <span class="op">=</span> r2_score(y_reg_train, best_reg_pipe.predict(X_reg_train))</span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a>r2_val <span class="op">=</span> r2_score(y_reg_val, best_reg_pipe.predict(X_reg_val))</span>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a>r2_test <span class="op">=</span> r2_score(y_reg_test, best_reg_pipe.predict(X_reg_test))</span>
+<span id="cb51-4"><a href="#cb51-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-5"><a href="#cb51-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Train R2:      </span><span class="sc">{</span>r2_train<span class="sc">:.4f}</span><span class="ss">&quot;</span>)</span>
+<span id="cb51-6"><a href="#cb51-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Validation R2: </span><span class="sc">{</span>r2_val<span class="sc">:.4f}</span><span class="ss">&quot;</span>)</span>
+<span id="cb51-7"><a href="#cb51-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Test R2:       </span><span class="sc">{</span>r2_test<span class="sc">:.4f}</span><span class="ss">&quot;</span>)</span>
+<span id="cb51-8"><a href="#cb51-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Train-test gap: </span><span class="sc">{</span>r2_train <span class="op">-</span> r2_test<span class="sc">:+.4f}</span><span class="ss">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>Train R2:      0.9988
@@ -3569,14 +3600,14 @@ Train-test gap: -0.0000</code></pre>
 </div>
 <p>All three numbers sit within a few thousandths of each other. <strong>This is the opposite signature of overfitting</strong> — an overfit model shows a large train/held-out gap; here there is essentially none, because an additive rate-card relationship is genuinely easy to learn without memorizing noise.</p>
 <p><strong>Check 2 — 5-fold cross-validation across the whole dataset.</strong> A single lucky train/test split could in principle produce an inflated score. Cross-validation refits the model on 5 different partitions and reports the spread.</p>
-<div id="reg-overfitting-check-2" class="cell" data-execution_count="34">
+<div id="reg-overfitting-check-2" class="cell" data-execution_count="35">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb51"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.model_selection <span class="im">import</span> cross_val_score</span>
-<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a>cv_scores <span class="op">=</span> cross_val_score(clone(best_reg_pipe), X_reg, y_reg, cv<span class="op">=</span><span class="dv">5</span>, scoring<span class="op">=</span><span class="st">&quot;r2&quot;</span>)</span>
-<span id="cb51-4"><a href="#cb51-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;R2 per fold:&quot;</span>, np.<span class="bu">round</span>(cv_scores, <span class="dv">4</span>))</span>
-<span id="cb51-5"><a href="#cb51-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Mean R2: </span><span class="sc">{</span>cv_scores<span class="sc">.</span>mean()<span class="sc">:.4f}</span><span class="ss">  (std: </span><span class="sc">{</span>cv_scores<span class="sc">.</span>std()<span class="sc">:.4f}</span><span class="ss">)&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb53"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.model_selection <span class="im">import</span> cross_val_score</span>
+<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a>cv_scores <span class="op">=</span> cross_val_score(clone(best_reg_pipe), X_reg, y_reg, cv<span class="op">=</span><span class="dv">5</span>, scoring<span class="op">=</span><span class="st">&quot;r2&quot;</span>)</span>
+<span id="cb53-4"><a href="#cb53-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;R2 per fold:&quot;</span>, np.<span class="bu">round</span>(cv_scores, <span class="dv">4</span>))</span>
+<span id="cb53-5"><a href="#cb53-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Mean R2: </span><span class="sc">{</span>cv_scores<span class="sc">.</span>mean()<span class="sc">:.4f}</span><span class="ss">  (std: </span><span class="sc">{</span>cv_scores<span class="sc">.</span>std()<span class="sc">:.4f}</span><span class="ss">)&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>R2 per fold: [0.9988 0.9989 0.9988 0.9988 0.9988]
@@ -3585,17 +3616,17 @@ Mean R2: 0.9988  (std: 0.0000)</code></pre>
 </div>
 <p>The score is stable to the third decimal place across five independent folds — not a fluke of one particular split.</p>
 <p><strong>Check 3 — negative control (permutation test).</strong> This is the most direct test for a leaking or buggy pipeline: randomly permute <code>MonthlyCharges</code> so any real relationship between features and target is destroyed, then refit and score on the (real, untouched) test set. If the pipeline could still score well after this, it would mean it is exploiting something other than genuine signal — e.g. a bug letting it see the answer. A collapse to ~0 (or negative) R² shows it cannot manufacture a score from nothing.</p>
-<div id="reg-overfitting-check-3" class="cell" data-execution_count="35">
+<div id="reg-overfitting-check-3" class="cell" data-execution_count="36">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb53"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.RandomState(RANDOM_STATE)</span>
-<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a>y_reg_train_shuffled <span class="op">=</span> rng.permutation(y_reg_train.values)</span>
-<span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb53-4"><a href="#cb53-4" aria-hidden="true" tabindex="-1"></a>shuffled_pipe <span class="op">=</span> clone(best_reg_pipe)</span>
-<span id="cb53-5"><a href="#cb53-5" aria-hidden="true" tabindex="-1"></a>shuffled_pipe.fit(X_reg_train, y_reg_train_shuffled)</span>
-<span id="cb53-6"><a href="#cb53-6" aria-hidden="true" tabindex="-1"></a>r2_shuffled <span class="op">=</span> r2_score(y_reg_test, shuffled_pipe.predict(X_reg_test))</span>
-<span id="cb53-7"><a href="#cb53-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb53-8"><a href="#cb53-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;R2 on real test set, trained on shuffled target: </span><span class="sc">{</span>r2_shuffled<span class="sc">:.4f}</span><span class="ss">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb55"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.RandomState(RANDOM_STATE)</span>
+<span id="cb55-2"><a href="#cb55-2" aria-hidden="true" tabindex="-1"></a>y_reg_train_shuffled <span class="op">=</span> rng.permutation(y_reg_train.values)</span>
+<span id="cb55-3"><a href="#cb55-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb55-4"><a href="#cb55-4" aria-hidden="true" tabindex="-1"></a>shuffled_pipe <span class="op">=</span> clone(best_reg_pipe)</span>
+<span id="cb55-5"><a href="#cb55-5" aria-hidden="true" tabindex="-1"></a>shuffled_pipe.fit(X_reg_train, y_reg_train_shuffled)</span>
+<span id="cb55-6"><a href="#cb55-6" aria-hidden="true" tabindex="-1"></a>r2_shuffled <span class="op">=</span> r2_score(y_reg_test, shuffled_pipe.predict(X_reg_test))</span>
+<span id="cb55-7"><a href="#cb55-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb55-8"><a href="#cb55-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;R2 on real test set, trained on shuffled target: </span><span class="sc">{</span>r2_shuffled<span class="sc">:.4f}</span><span class="ss">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>R2 on real test set, trained on shuffled target: 0.0278</code></pre>
@@ -3603,32 +3634,32 @@ Mean R2: 0.9988  (std: 0.0000)</code></pre>
 </div>
 <p>With the training target shuffled, R² collapses — confirming the 0.999 score on the real target reflects a genuine, learnable relationship rather than an artifact of the pipeline, the split, or a hidden leakage path.</p>
 <p><strong>Check 4 — the recovered rate card.</strong> <code>Ridge</code> is linear, so its coefficients <em>are</em> the model — there is no hidden complexity to distrust. Below is the model’s learned price effect for each service/plan feature, recovered by name and checkable by hand.</p>
-<div id="reg-rate-card" class="cell" data-execution_count="36">
+<div id="reg-rate-card" class="cell" data-execution_count="37">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb55"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a>reg_model_step <span class="op">=</span> best_reg_pipe.named_steps[<span class="st">&quot;model&quot;</span>]</span>
-<span id="cb55-2"><a href="#cb55-2" aria-hidden="true" tabindex="-1"></a>reg_feature_names <span class="op">=</span> best_reg_pipe.named_steps[<span class="st">&quot;preprocess&quot;</span>].get_feature_names_out()</span>
-<span id="cb55-3"><a href="#cb55-3" aria-hidden="true" tabindex="-1"></a>reg_selected_mask <span class="op">=</span> best_reg_pipe.named_steps[<span class="st">&quot;select&quot;</span>].get_support()</span>
-<span id="cb55-4"><a href="#cb55-4" aria-hidden="true" tabindex="-1"></a>reg_selected_names <span class="op">=</span> reg_feature_names[reg_selected_mask]</span>
-<span id="cb55-5"><a href="#cb55-5" aria-hidden="true" tabindex="-1"></a>clean_reg_names <span class="op">=</span> [</span>
-<span id="cb55-6"><a href="#cb55-6" aria-hidden="true" tabindex="-1"></a>    name.replace(<span class="st">&quot;num__&quot;</span>, <span class="st">&quot;&quot;</span>).replace(<span class="st">&quot;cat__&quot;</span>, <span class="st">&quot;&quot;</span>).replace(<span class="st">&quot;_&quot;</span>, <span class="st">&quot; &quot;</span>)</span>
-<span id="cb55-7"><a href="#cb55-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> name <span class="kw">in</span> reg_selected_names</span>
-<span id="cb55-8"><a href="#cb55-8" aria-hidden="true" tabindex="-1"></a>]</span>
-<span id="cb55-9"><a href="#cb55-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb55-10"><a href="#cb55-10" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="bu">hasattr</span>(reg_model_step, <span class="st">&quot;coef_&quot;</span>):</span>
-<span id="cb55-11"><a href="#cb55-11" aria-hidden="true" tabindex="-1"></a>    rate_card <span class="op">=</span> pd.DataFrame({</span>
-<span id="cb55-12"><a href="#cb55-12" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;feature&quot;</span>: clean_reg_names,</span>
-<span id="cb55-13"><a href="#cb55-13" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;price_effect_$&quot;</span>: reg_model_step.coef_,</span>
-<span id="cb55-14"><a href="#cb55-14" aria-hidden="true" tabindex="-1"></a>    }).sort_values(<span class="st">&quot;price_effect_$&quot;</span>, ascending<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb55-15"><a href="#cb55-15" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f&quot;Base rate (intercept): $</span><span class="sc">{</span>reg_model_step<span class="sc">.</span>intercept_<span class="sc">:.2f}</span><span class="ch">\n</span><span class="ss">&quot;</span>)</span>
-<span id="cb55-16"><a href="#cb55-16" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(rate_card.<span class="bu">round</span>(<span class="dv">2</span>).to_string(index<span class="op">=</span><span class="va">False</span>))</span>
-<span id="cb55-17"><a href="#cb55-17" aria-hidden="true" tabindex="-1"></a><span class="cf">else</span>:</span>
-<span id="cb55-18"><a href="#cb55-18" aria-hidden="true" tabindex="-1"></a>    importances <span class="op">=</span> reg_model_step.feature_importances_</span>
-<span id="cb55-19"><a href="#cb55-19" aria-hidden="true" tabindex="-1"></a>    rate_card <span class="op">=</span> pd.DataFrame({</span>
-<span id="cb55-20"><a href="#cb55-20" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;feature&quot;</span>: clean_reg_names,</span>
-<span id="cb55-21"><a href="#cb55-21" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;importance&quot;</span>: importances,</span>
-<span id="cb55-22"><a href="#cb55-22" aria-hidden="true" tabindex="-1"></a>    }).sort_values(<span class="st">&quot;importance&quot;</span>, ascending<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb55-23"><a href="#cb55-23" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(rate_card.<span class="bu">round</span>(<span class="dv">4</span>).to_string(index<span class="op">=</span><span class="va">False</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb57"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a>reg_model_step <span class="op">=</span> best_reg_pipe.named_steps[<span class="st">&quot;model&quot;</span>]</span>
+<span id="cb57-2"><a href="#cb57-2" aria-hidden="true" tabindex="-1"></a>reg_feature_names <span class="op">=</span> best_reg_pipe.named_steps[<span class="st">&quot;preprocess&quot;</span>].get_feature_names_out()</span>
+<span id="cb57-3"><a href="#cb57-3" aria-hidden="true" tabindex="-1"></a>reg_selected_mask <span class="op">=</span> best_reg_pipe.named_steps[<span class="st">&quot;select&quot;</span>].get_support()</span>
+<span id="cb57-4"><a href="#cb57-4" aria-hidden="true" tabindex="-1"></a>reg_selected_names <span class="op">=</span> reg_feature_names[reg_selected_mask]</span>
+<span id="cb57-5"><a href="#cb57-5" aria-hidden="true" tabindex="-1"></a>clean_reg_names <span class="op">=</span> [</span>
+<span id="cb57-6"><a href="#cb57-6" aria-hidden="true" tabindex="-1"></a>    name.replace(<span class="st">&quot;num__&quot;</span>, <span class="st">&quot;&quot;</span>).replace(<span class="st">&quot;cat__&quot;</span>, <span class="st">&quot;&quot;</span>).replace(<span class="st">&quot;_&quot;</span>, <span class="st">&quot; &quot;</span>)</span>
+<span id="cb57-7"><a href="#cb57-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> name <span class="kw">in</span> reg_selected_names</span>
+<span id="cb57-8"><a href="#cb57-8" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb57-9"><a href="#cb57-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb57-10"><a href="#cb57-10" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="bu">hasattr</span>(reg_model_step, <span class="st">&quot;coef_&quot;</span>):</span>
+<span id="cb57-11"><a href="#cb57-11" aria-hidden="true" tabindex="-1"></a>    rate_card <span class="op">=</span> pd.DataFrame({</span>
+<span id="cb57-12"><a href="#cb57-12" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;feature&quot;</span>: clean_reg_names,</span>
+<span id="cb57-13"><a href="#cb57-13" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;price_effect_$&quot;</span>: reg_model_step.coef_,</span>
+<span id="cb57-14"><a href="#cb57-14" aria-hidden="true" tabindex="-1"></a>    }).sort_values(<span class="st">&quot;price_effect_$&quot;</span>, ascending<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb57-15"><a href="#cb57-15" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f&quot;Base rate (intercept): $</span><span class="sc">{</span>reg_model_step<span class="sc">.</span>intercept_<span class="sc">:.2f}</span><span class="ch">\n</span><span class="ss">&quot;</span>)</span>
+<span id="cb57-16"><a href="#cb57-16" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(rate_card.<span class="bu">round</span>(<span class="dv">2</span>).to_string(index<span class="op">=</span><span class="va">False</span>))</span>
+<span id="cb57-17"><a href="#cb57-17" aria-hidden="true" tabindex="-1"></a><span class="cf">else</span>:</span>
+<span id="cb57-18"><a href="#cb57-18" aria-hidden="true" tabindex="-1"></a>    importances <span class="op">=</span> reg_model_step.feature_importances_</span>
+<span id="cb57-19"><a href="#cb57-19" aria-hidden="true" tabindex="-1"></a>    rate_card <span class="op">=</span> pd.DataFrame({</span>
+<span id="cb57-20"><a href="#cb57-20" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;feature&quot;</span>: clean_reg_names,</span>
+<span id="cb57-21"><a href="#cb57-21" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;importance&quot;</span>: importances,</span>
+<span id="cb57-22"><a href="#cb57-22" aria-hidden="true" tabindex="-1"></a>    }).sort_values(<span class="st">&quot;importance&quot;</span>, ascending<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb57-23"><a href="#cb57-23" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(rate_card.<span class="bu">round</span>(<span class="dv">4</span>).to_string(index<span class="op">=</span><span class="va">False</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>Base rate (intercept): $53.28
@@ -3693,35 +3724,35 @@ PaymentMethod Bank transfer (automatic)            0.01
 </section>
 <section id="what-matters-and-what-we-would-not-trust-this-model-to-do" class="level3">
 <h3 class="anchored" data-anchor-id="what-matters-and-what-we-would-not-trust-this-model-to-do">11.4 What matters, and what we would not trust this model to do</h3>
-<div id="cell-feature-importance" class="cell" data-execution_count="37">
+<div id="cell-feature-importance" class="cell" data-execution_count="38">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb57"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a>xgb_step <span class="op">=</span> clf_models[<span class="st">&quot;XGBoost&quot;</span>].named_steps[<span class="st">&quot;model&quot;</span>]</span>
-<span id="cb57-2"><a href="#cb57-2" aria-hidden="true" tabindex="-1"></a>importances <span class="op">=</span> xgb_step.feature_importances_</span>
-<span id="cb57-3"><a href="#cb57-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb57-4"><a href="#cb57-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Recover real column names: ColumnTransformer names every encoded column</span></span>
-<span id="cb57-5"><a href="#cb57-5" aria-hidden="true" tabindex="-1"></a><span class="co"># (e.g. &quot;cat__Contract_Month-to-month&quot;), and SelectFromModel&#39;s boolean mask</span></span>
-<span id="cb57-6"><a href="#cb57-6" aria-hidden="true" tabindex="-1"></a><span class="co"># tells us which of those survived selection — together they let us label</span></span>
-<span id="cb57-7"><a href="#cb57-7" aria-hidden="true" tabindex="-1"></a><span class="co"># the plot with real feature names instead of bare indices.</span></span>
-<span id="cb57-8"><a href="#cb57-8" aria-hidden="true" tabindex="-1"></a>all_feature_names <span class="op">=</span> clf_models[<span class="st">&quot;XGBoost&quot;</span>].named_steps[<span class="st">&quot;preprocess&quot;</span>].get_feature_names_out()</span>
-<span id="cb57-9"><a href="#cb57-9" aria-hidden="true" tabindex="-1"></a>selected_mask <span class="op">=</span> clf_models[<span class="st">&quot;XGBoost&quot;</span>].named_steps[<span class="st">&quot;select&quot;</span>].get_support()</span>
-<span id="cb57-10"><a href="#cb57-10" aria-hidden="true" tabindex="-1"></a>selected_feature_names <span class="op">=</span> all_feature_names[selected_mask]</span>
-<span id="cb57-11"><a href="#cb57-11" aria-hidden="true" tabindex="-1"></a>clean_names <span class="op">=</span> [</span>
-<span id="cb57-12"><a href="#cb57-12" aria-hidden="true" tabindex="-1"></a>    name.replace(<span class="st">&quot;num__&quot;</span>, <span class="st">&quot;&quot;</span>).replace(<span class="st">&quot;cat__&quot;</span>, <span class="st">&quot;&quot;</span>).replace(<span class="st">&quot;_&quot;</span>, <span class="st">&quot; &quot;</span>)</span>
-<span id="cb57-13"><a href="#cb57-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> name <span class="kw">in</span> selected_feature_names</span>
-<span id="cb57-14"><a href="#cb57-14" aria-hidden="true" tabindex="-1"></a>]</span>
-<span id="cb57-15"><a href="#cb57-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb57-16"><a href="#cb57-16" aria-hidden="true" tabindex="-1"></a>top_n <span class="op">=</span> <span class="bu">min</span>(<span class="dv">10</span>, <span class="bu">len</span>(importances))</span>
-<span id="cb57-17"><a href="#cb57-17" aria-hidden="true" tabindex="-1"></a>top_idx <span class="op">=</span> np.argsort(importances)[<span class="op">-</span>top_n:][::<span class="op">-</span><span class="dv">1</span>]</span>
-<span id="cb57-18"><a href="#cb57-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb57-19"><a href="#cb57-19" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(figsize<span class="op">=</span>(<span class="dv">7</span>, <span class="dv">4</span>))</span>
-<span id="cb57-20"><a href="#cb57-20" aria-hidden="true" tabindex="-1"></a>ax.barh(<span class="bu">range</span>(top_n), importances[top_idx][::<span class="op">-</span><span class="dv">1</span>])</span>
-<span id="cb57-21"><a href="#cb57-21" aria-hidden="true" tabindex="-1"></a>ax.set_yticks(<span class="bu">range</span>(top_n))</span>
-<span id="cb57-22"><a href="#cb57-22" aria-hidden="true" tabindex="-1"></a>ax.set_yticklabels([clean_names[i] <span class="cf">for</span> i <span class="kw">in</span> top_idx][::<span class="op">-</span><span class="dv">1</span>])</span>
-<span id="cb57-23"><a href="#cb57-23" aria-hidden="true" tabindex="-1"></a>ax.set_xlabel(<span class="st">&quot;XGBoost feature importance&quot;</span>)</span>
-<span id="cb57-24"><a href="#cb57-24" aria-hidden="true" tabindex="-1"></a>ax.set_title(<span class="st">&quot;Top churn-predicting features&quot;</span>)</span>
-<span id="cb57-25"><a href="#cb57-25" aria-hidden="true" tabindex="-1"></a>plt.tight_layout()</span>
-<span id="cb57-26"><a href="#cb57-26" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb59"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a>xgb_step <span class="op">=</span> clf_models[<span class="st">&quot;XGBoost&quot;</span>].named_steps[<span class="st">&quot;model&quot;</span>]</span>
+<span id="cb59-2"><a href="#cb59-2" aria-hidden="true" tabindex="-1"></a>importances <span class="op">=</span> xgb_step.feature_importances_</span>
+<span id="cb59-3"><a href="#cb59-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-4"><a href="#cb59-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Recover real column names: ColumnTransformer names every encoded column</span></span>
+<span id="cb59-5"><a href="#cb59-5" aria-hidden="true" tabindex="-1"></a><span class="co"># (e.g. &quot;cat__Contract_Month-to-month&quot;), and SelectFromModel&#39;s boolean mask</span></span>
+<span id="cb59-6"><a href="#cb59-6" aria-hidden="true" tabindex="-1"></a><span class="co"># tells us which of those survived selection — together they let us label</span></span>
+<span id="cb59-7"><a href="#cb59-7" aria-hidden="true" tabindex="-1"></a><span class="co"># the plot with real feature names instead of bare indices.</span></span>
+<span id="cb59-8"><a href="#cb59-8" aria-hidden="true" tabindex="-1"></a>all_feature_names <span class="op">=</span> clf_models[<span class="st">&quot;XGBoost&quot;</span>].named_steps[<span class="st">&quot;preprocess&quot;</span>].get_feature_names_out()</span>
+<span id="cb59-9"><a href="#cb59-9" aria-hidden="true" tabindex="-1"></a>selected_mask <span class="op">=</span> clf_models[<span class="st">&quot;XGBoost&quot;</span>].named_steps[<span class="st">&quot;select&quot;</span>].get_support()</span>
+<span id="cb59-10"><a href="#cb59-10" aria-hidden="true" tabindex="-1"></a>selected_feature_names <span class="op">=</span> all_feature_names[selected_mask]</span>
+<span id="cb59-11"><a href="#cb59-11" aria-hidden="true" tabindex="-1"></a>clean_names <span class="op">=</span> [</span>
+<span id="cb59-12"><a href="#cb59-12" aria-hidden="true" tabindex="-1"></a>    name.replace(<span class="st">&quot;num__&quot;</span>, <span class="st">&quot;&quot;</span>).replace(<span class="st">&quot;cat__&quot;</span>, <span class="st">&quot;&quot;</span>).replace(<span class="st">&quot;_&quot;</span>, <span class="st">&quot; &quot;</span>)</span>
+<span id="cb59-13"><a href="#cb59-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> name <span class="kw">in</span> selected_feature_names</span>
+<span id="cb59-14"><a href="#cb59-14" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb59-15"><a href="#cb59-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-16"><a href="#cb59-16" aria-hidden="true" tabindex="-1"></a>top_n <span class="op">=</span> <span class="bu">min</span>(<span class="dv">10</span>, <span class="bu">len</span>(importances))</span>
+<span id="cb59-17"><a href="#cb59-17" aria-hidden="true" tabindex="-1"></a>top_idx <span class="op">=</span> np.argsort(importances)[<span class="op">-</span>top_n:][::<span class="op">-</span><span class="dv">1</span>]</span>
+<span id="cb59-18"><a href="#cb59-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-19"><a href="#cb59-19" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(figsize<span class="op">=</span>(<span class="dv">7</span>, <span class="dv">4</span>))</span>
+<span id="cb59-20"><a href="#cb59-20" aria-hidden="true" tabindex="-1"></a>ax.barh(<span class="bu">range</span>(top_n), importances[top_idx][::<span class="op">-</span><span class="dv">1</span>])</span>
+<span id="cb59-21"><a href="#cb59-21" aria-hidden="true" tabindex="-1"></a>ax.set_yticks(<span class="bu">range</span>(top_n))</span>
+<span id="cb59-22"><a href="#cb59-22" aria-hidden="true" tabindex="-1"></a>ax.set_yticklabels([clean_names[i] <span class="cf">for</span> i <span class="kw">in</span> top_idx][::<span class="op">-</span><span class="dv">1</span>])</span>
+<span id="cb59-23"><a href="#cb59-23" aria-hidden="true" tabindex="-1"></a>ax.set_xlabel(<span class="st">&quot;XGBoost feature importance&quot;</span>)</span>
+<span id="cb59-24"><a href="#cb59-24" aria-hidden="true" tabindex="-1"></a>ax.set_title(<span class="st">&quot;Top churn-predicting features&quot;</span>)</span>
+<span id="cb59-25"><a href="#cb59-25" aria-hidden="true" tabindex="-1"></a>plt.tight_layout()</span>
+<span id="cb59-26"><a href="#cb59-26" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-display">
 <div>
@@ -3742,26 +3773,26 @@ PaymentMethod Bank transfer (automatic)            0.01
 <section id="saving-the-final-pipelines-for-deployment" class="level2">
 <h2 class="anchored" data-anchor-id="saving-the-final-pipelines-for-deployment">12. Saving the final pipelines for deployment</h2>
 <p>The best pipeline per task, as selected on the test-set leaderboard above, is refit on the <strong>full dataset</strong> (train + validation + test) before saving — since test performance has already been honestly reported, there is no reason to withhold that data from the model that will actually serve predictions in the app.</p>
-<div id="save-models" class="cell" data-execution_count="38">
+<div id="save-models" class="cell" data-execution_count="39">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> joblib</span>
-<span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
-<span id="cb58-3"><a href="#cb58-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb58-4"><a href="#cb58-4" aria-hidden="true" tabindex="-1"></a>os.makedirs(<span class="st">&quot;../models&quot;</span>, exist_ok<span class="op">=</span><span class="va">True</span>)</span>
-<span id="cb58-5"><a href="#cb58-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb58-6"><a href="#cb58-6" aria-hidden="true" tabindex="-1"></a>final_clf_pipe <span class="op">=</span> clone(best_clf_pipe)</span>
-<span id="cb58-7"><a href="#cb58-7" aria-hidden="true" tabindex="-1"></a>final_clf_pipe.fit(X_clf, y_clf)</span>
-<span id="cb58-8"><a href="#cb58-8" aria-hidden="true" tabindex="-1"></a>joblib.dump(final_clf_pipe, <span class="st">&quot;../models/churn_pipeline.pkl&quot;</span>)</span>
-<span id="cb58-9"><a href="#cb58-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb58-10"><a href="#cb58-10" aria-hidden="true" tabindex="-1"></a>final_reg_pipe <span class="op">=</span> clone(best_reg_pipe)</span>
-<span id="cb58-11"><a href="#cb58-11" aria-hidden="true" tabindex="-1"></a>final_reg_pipe.fit(X_reg, y_reg)</span>
-<span id="cb58-12"><a href="#cb58-12" aria-hidden="true" tabindex="-1"></a>joblib.dump(final_reg_pipe, <span class="st">&quot;../models/charges_pipeline.pkl&quot;</span>)</span>
-<span id="cb58-13"><a href="#cb58-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb58-14"><a href="#cb58-14" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Saved churn_pipeline.pkl (best model: </span><span class="sc">{</span>best_clf_name<span class="sc">}</span><span class="ss">)&quot;</span>)</span>
-<span id="cb58-15"><a href="#cb58-15" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Saved charges_pipeline.pkl (best model: </span><span class="sc">{</span>best_reg_name<span class="sc">}</span><span class="ss">)&quot;</span>)</span>
-<span id="cb58-16"><a href="#cb58-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;Classification feature columns:&quot;</span>, <span class="bu">list</span>(X_clf.columns))</span>
-<span id="cb58-17"><a href="#cb58-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;Regression feature columns:&quot;</span>, <span class="bu">list</span>(X_reg.columns))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> joblib</span>
+<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-4"><a href="#cb60-4" aria-hidden="true" tabindex="-1"></a>os.makedirs(<span class="st">&quot;../models&quot;</span>, exist_ok<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb60-5"><a href="#cb60-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-6"><a href="#cb60-6" aria-hidden="true" tabindex="-1"></a>final_clf_pipe <span class="op">=</span> clone(best_clf_pipe)</span>
+<span id="cb60-7"><a href="#cb60-7" aria-hidden="true" tabindex="-1"></a>final_clf_pipe.fit(X_clf, y_clf)</span>
+<span id="cb60-8"><a href="#cb60-8" aria-hidden="true" tabindex="-1"></a>joblib.dump(final_clf_pipe, <span class="st">&quot;../models/churn_pipeline.pkl&quot;</span>)</span>
+<span id="cb60-9"><a href="#cb60-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-10"><a href="#cb60-10" aria-hidden="true" tabindex="-1"></a>final_reg_pipe <span class="op">=</span> clone(best_reg_pipe)</span>
+<span id="cb60-11"><a href="#cb60-11" aria-hidden="true" tabindex="-1"></a>final_reg_pipe.fit(X_reg, y_reg)</span>
+<span id="cb60-12"><a href="#cb60-12" aria-hidden="true" tabindex="-1"></a>joblib.dump(final_reg_pipe, <span class="st">&quot;../models/charges_pipeline.pkl&quot;</span>)</span>
+<span id="cb60-13"><a href="#cb60-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-14"><a href="#cb60-14" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Saved churn_pipeline.pkl (best model: </span><span class="sc">{</span>best_clf_name<span class="sc">}</span><span class="ss">)&quot;</span>)</span>
+<span id="cb60-15"><a href="#cb60-15" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;Saved charges_pipeline.pkl (best model: </span><span class="sc">{</span>best_reg_name<span class="sc">}</span><span class="ss">)&quot;</span>)</span>
+<span id="cb60-16"><a href="#cb60-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;Classification feature columns:&quot;</span>, <span class="bu">list</span>(X_clf.columns))</span>
+<span id="cb60-17"><a href="#cb60-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;Regression feature columns:&quot;</span>, <span class="bu">list</span>(X_reg.columns))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>Saved churn_pipeline.pkl (best model: Logistic Regression)

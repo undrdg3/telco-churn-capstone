@@ -7,7 +7,8 @@ prediction app.
 
 ## Live app
 
-TODO: link once deployed.
+- App: https://telco-churn-capstone.vercel.app/
+- API: https://telco-churn-api-nin2.onrender.com/ (free tier — sleeps after 15 min idle, first request after that takes ~30-60s to wake up)
 
 ## Repo structure
 

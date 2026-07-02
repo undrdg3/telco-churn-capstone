@@ -50,4 +50,3 @@ npm run dev
 - `docs/ai-workflow-reflection.md` — AI-workflow reflection (D3)
 - `slides/presentation.qmd` — presentation deck (D4)
 - `docs/executive-summary.md` — executive summary (D5)
-- `docs/explain-to-professor.md` — plain-language walkthrough of every step and why it was done

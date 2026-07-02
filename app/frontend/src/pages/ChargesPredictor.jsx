@@ -1,6 +1,6 @@
 import { useState } from "react";
 import CustomerForm from "../CustomerForm";
-import { FIELD_SECTIONS, DEFAULT_VALUES } from "../fields";
+import { FIELD_SECTIONS, DEFAULT_VALUES, CHARGES_PRESETS } from "../fields";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const AVG_MONTHLY_CHARGES = 64.76;
@@ -17,12 +17,46 @@ function interpret(values, predicted) {
   return `DSL internet with ${addonCount} add-on service${addonCount === 1 ? "" : "s"} lands close to the $${AVG_MONTHLY_CHARGES.toFixed(2)} dataset average bill.`;
 }
 
+function DriverList({ drivers }) {
+  if (!drivers || drivers.length === 0) return null;
+  const maxAbs = Math.max(...drivers.map((d) => Math.abs(d.value)), 0.0001);
+  return (
+    <div className="driver-list">
+      <p className="driver-list-title">Top factors in this prediction</p>
+      {drivers.map((d) => (
+        <div key={d.feature} className="driver-row">
+          <span className="driver-name" title={d.feature}>{d.feature}</span>
+          <div className="driver-bar-track">
+            <div
+              className="driver-bar-fill"
+              style={{
+                width: `${(Math.abs(d.value) / maxAbs) * 100}%`,
+                background: d.value >= 0 ? "#D69A3C" : "#1F6F6B",
+                marginLeft: d.value >= 0 ? "0" : "auto",
+              }}
+            />
+          </div>
+        </div>
+      ))}
+      <p className="whatif-caption" style={{ marginTop: 4 }}>
+        Gold bars push the bill up, teal bars push it down — this is the recovered rate card
+        applied to this specific customer, not a generic ranking.
+      </p>
+    </div>
+  );
+}
+
 export default function ChargesPredictor() {
   const [values, setValues] = useState({ ...DEFAULT_VALUES });
   const onChange = (name, value) => setValues((v) => ({ ...v, [name]: value }));
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const applyPreset = (preset) => {
+    setValues({ ...values, ...preset.values });
+    setResult(null);
+  };
 
   const submit = async () => {
     setLoading(true);
@@ -39,6 +73,7 @@ export default function ChargesPredictor() {
       setResult({
         amountText: `$${data.predicted_monthly_charges.toFixed(2)}`,
         interpretation: interpret(values, data.predicted_monthly_charges),
+        drivers: data.top_drivers,
       });
     } catch (e) {
       setError(e.message);
@@ -56,6 +91,15 @@ export default function ChargesPredictor() {
 
       <div className="predictor-layout">
         <div className="predictor-form-col">
+          <div className="preset-row">
+            <span className="preset-label">Try a sample profile:</span>
+            {CHARGES_PRESETS.map((preset) => (
+              <button key={preset.label} type="button" className="preset-btn" onClick={() => applyPreset(preset)}>
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
           <CustomerForm sections={FIELD_SECTIONS} values={values} onChange={onChange} />
           <button className="predict-btn gold" onClick={submit} disabled={loading}>
             {loading ? "Predicting..." : "Predict monthly charges"}
@@ -72,6 +116,7 @@ export default function ChargesPredictor() {
               <div className="charges-amount">{result.amountText}</div>
               <div className="charges-amount-caption">predicted monthly charge</div>
               <p className="result-interpretation">{result.interpretation}</p>
+              <DriverList drivers={result.drivers} />
             </div>
           ) : (
             <div className="result-empty">

@@ -184,7 +184,7 @@ Matej
 <li>Engineer a handful of simple, explainable features</li>
 <li>Build a ladder of models — simple to advanced — for each question</li>
 <li>Compare every model honestly against a “do-nothing” baseline</li>
-<li>Ship a live app that makes real predictions</li>
+<li>Ship a live app that makes real predictions and explains them</li>
 </ol>
 </section>
 <section id="what-we-found-churn" class="slide level2">
@@ -202,6 +202,24 @@ Matej
 <li>Monthly bill is almost entirely explained by <strong>plan + add-ons</strong></li>
 <li>Same plan → nearly the same bill (~$1 variation)</li>
 <li>A simple model predicts bills very accurately — useful as a <strong>pricing sanity check</strong>, not a way to set prices</li>
+</ul>
+</section>
+<section id="which-model-wins-logistic-regression-or-xgboost" class="slide level2">
+<h2>Which model wins — Logistic Regression or XGBoost?</h2>
+<ul>
+<li>Logistic Regression: 0.837 ROC-AUC · XGBoost: 0.832 — a 0.5-point gap</li>
+<li>On ~1,400 test customers, that gap isn’t statistically meaningful — <strong>effectively a tie</strong></li>
+<li>We pick Logistic Regression anyway: same accuracy, but every prediction is fully explainable</li>
+<li>(Caught our own mistake mid-project: the winner must be picked on the <strong>validation</strong> set, never the test set — fixed, same winner either way)</li>
+</ul>
+</section>
+<section id="catching-more-churners" class="slide level2">
+<h2>Catching more churners</h2>
+<ul>
+<li>Default cutoff (“flag if &gt;50% likely to churn”) only catches <strong>half</strong> of actual churners</li>
+<li>Missing a real churner costs more than one extra retention call to someone who was staying anyway</li>
+<li>Lowered the cutoff to catch <strong>two-thirds</strong> of churners instead — tuned on validation data, confirmed once on test</li>
+<li>A deliberate, measured trade: more retention offers, far fewer missed churners</li>
 </ul>
 </section>
 <section id="isnt-r²-0.999-just-overfitting" class="slide level2">
@@ -225,12 +243,14 @@ Matej
 <li>Neither model should make automated decisions without a human in the loop</li>
 </ul>
 </section>
-<section id="the-app" class="slide level2">
-<h2>The app</h2>
+<section id="the-app-live-now" class="slide level2">
+<h2>The app — live now</h2>
 <ul>
-<li><strong>Churn Predictor</strong> — enter a customer’s profile, get a churn probability</li>
-<li><strong>Charges Predictor</strong> — enter a plan, get an expected bill</li>
-<li><strong>Model Leaderboard</strong> — see exactly how every model performed, baseline included</li>
+<li><strong>Churn Predictor</strong> — enter a profile, get a churn probability and <em>why</em> (top drivers for that specific customer, not a generic ranking)</li>
+<li><strong>“What if?”</strong> — flip the contract type, see the risk shift instantly</li>
+<li><strong>Charges Predictor</strong> — enter a plan, get an expected bill and its drivers</li>
+<li><strong>Model Leaderboard</strong> — every model’s performance, baseline included</li>
+<li>Try it: <strong>telco-churn-capstone.vercel.app</strong></li>
 </ul>
 </section>
 <section id="recommendations" class="slide level2">

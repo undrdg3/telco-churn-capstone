@@ -55,6 +55,55 @@ export function sectionsWithChurnBilling() {
   );
 }
 
+export const CHURN_PRESETS = [
+  {
+    label: "Typical churner",
+    values: {
+      gender: "Female", SeniorCitizen: 0, Partner: "No", Dependents: "No",
+      tenure: 2, PhoneService: "Yes", MultipleLines: "No", InternetService: "Fiber optic",
+      OnlineSecurity: "No", OnlineBackup: "No", DeviceProtection: "No", TechSupport: "No",
+      StreamingTV: "No", StreamingMovies: "No", Contract: "Month-to-month",
+      PaperlessBilling: "Yes", PaymentMethod: "Electronic check",
+      MonthlyCharges: 90.0, TotalCharges: 180.0,
+    },
+  },
+  {
+    label: "Loyal customer",
+    values: {
+      gender: "Male", SeniorCitizen: 0, Partner: "Yes", Dependents: "Yes",
+      tenure: 60, PhoneService: "Yes", MultipleLines: "Yes", InternetService: "DSL",
+      OnlineSecurity: "Yes", OnlineBackup: "Yes", DeviceProtection: "Yes", TechSupport: "Yes",
+      StreamingTV: "Yes", StreamingMovies: "Yes", Contract: "Two year",
+      PaperlessBilling: "No", PaymentMethod: "Bank transfer (automatic)",
+      MonthlyCharges: 75.0, TotalCharges: 4500.0,
+    },
+  },
+];
+
+export const CHARGES_PRESETS = [
+  {
+    label: "Budget plan",
+    values: {
+      gender: "Female", SeniorCitizen: 0, Partner: "No", Dependents: "No",
+      tenure: 6, PhoneService: "Yes", MultipleLines: "No", InternetService: "No",
+      OnlineSecurity: "No internet service", OnlineBackup: "No internet service",
+      DeviceProtection: "No internet service", TechSupport: "No internet service",
+      StreamingTV: "No internet service", StreamingMovies: "No internet service",
+      Contract: "Month-to-month", PaperlessBilling: "No", PaymentMethod: "Mailed check",
+    },
+  },
+  {
+    label: "Premium plan",
+    values: {
+      gender: "Male", SeniorCitizen: 0, Partner: "Yes", Dependents: "No",
+      tenure: 24, PhoneService: "Yes", MultipleLines: "Yes", InternetService: "Fiber optic",
+      OnlineSecurity: "Yes", OnlineBackup: "Yes", DeviceProtection: "Yes", TechSupport: "Yes",
+      StreamingTV: "Yes", StreamingMovies: "Yes", Contract: "One year",
+      PaperlessBilling: "Yes", PaymentMethod: "Credit card (automatic)",
+    },
+  },
+];
+
 export const DEFAULT_VALUES = {
   gender: "Female",
   SeniorCitizen: 0,

@@ -35,7 +35,7 @@ correctly.
 3. Engineer a handful of simple, explainable features
 4. Build a ladder of models — simple to advanced — for each question
 5. Compare every model honestly against a "do-nothing" baseline
-6. Ship a live app that makes real predictions
+6. Ship a live app that makes real predictions and explains them
 
 ## What we found — Churn
 
@@ -51,6 +51,27 @@ correctly.
 - Same plan → nearly the same bill (~$1 variation)
 - A simple model predicts bills very accurately — useful as a
   **pricing sanity check**, not a way to set prices
+
+## Which model wins — Logistic Regression or XGBoost?
+
+- Logistic Regression: 0.837 ROC-AUC · XGBoost: 0.832 — a 0.5-point gap
+- On ~1,400 test customers, that gap isn't statistically meaningful —
+  **effectively a tie**
+- We pick Logistic Regression anyway: same accuracy, but every
+  prediction is fully explainable
+- (Caught our own mistake mid-project: the winner must be picked on the
+  **validation** set, never the test set — fixed, same winner either way)
+
+## Catching more churners
+
+- Default cutoff ("flag if >50% likely to churn") only catches **half**
+  of actual churners
+- Missing a real churner costs more than one extra retention call to
+  someone who was staying anyway
+- Lowered the cutoff to catch **two-thirds** of churners instead —
+  tuned on validation data, confirmed once on test
+- A deliberate, measured trade: more retention offers, far fewer missed
+  churners
 
 ## "Isn't R² = 0.999 just overfitting?"
 
@@ -69,11 +90,14 @@ correctly.
   because the model found something exotic
 - Neither model should make automated decisions without a human in the loop
 
-## The app
+## The app — live now
 
-- **Churn Predictor** — enter a customer's profile, get a churn probability
-- **Charges Predictor** — enter a plan, get an expected bill
-- **Model Leaderboard** — see exactly how every model performed, baseline included
+- **Churn Predictor** — enter a profile, get a churn probability and *why*
+  (top drivers for that specific customer, not a generic ranking)
+- **"What if?"** — flip the contract type, see the risk shift instantly
+- **Charges Predictor** — enter a plan, get an expected bill and its drivers
+- **Model Leaderboard** — every model's performance, baseline included
+- Try it: **telco-churn-capstone.vercel.app**
 
 ## Recommendations
 

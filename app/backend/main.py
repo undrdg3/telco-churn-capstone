@@ -9,8 +9,14 @@ from pydantic import BaseModel
 
 from feature_engineering import engineer_features
 from data_prep import load_clean_data, compute_overview_stats
+from model_explain import compute_top_drivers
 
 MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
+
+# Chosen in report/ml-analysis.qmd Section 11.1.1: lowered from the default 0.5 to
+# prioritize recall (misses fewer real churners) at the cost of more false alarms,
+# validated on the validation set and confirmed once on test (recall 0.503 -> 0.655).
+CHURN_DECISION_THRESHOLD = 0.39
 
 app = FastAPI(title="Telco Customer Churn & Charges API")
 
@@ -80,7 +86,9 @@ def predict_churn(payload: ChurnInput):
     proba = float(churn_pipeline.predict_proba(X)[0, 1])
     return {
         "churn_probability": round(proba, 4),
-        "will_churn": bool(proba >= 0.5),
+        "will_churn": bool(proba >= CHURN_DECISION_THRESHOLD),
+        "decision_threshold": CHURN_DECISION_THRESHOLD,
+        "top_drivers": compute_top_drivers(churn_pipeline, X, top_n=4),
     }
 
 
@@ -89,4 +97,7 @@ def predict_charges(payload: ChargesInput):
     row = engineer_features(payload.model_dump())
     X = pd.DataFrame([row])
     prediction = float(charges_pipeline.predict(X)[0])
-    return {"predicted_monthly_charges": round(prediction, 2)}
+    return {
+        "predicted_monthly_charges": round(prediction, 2),
+        "top_drivers": compute_top_drivers(charges_pipeline, X, top_n=4),
+    }

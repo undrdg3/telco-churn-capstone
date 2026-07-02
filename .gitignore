@@ -34,3 +34,4 @@ backend.log
 *.log
 .superpowers/
 Telco Insights (standalone).html
+docs/explain-to-professor.md

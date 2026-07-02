@@ -10,7 +10,7 @@
   <meta name="generator" content="quarto-1.9.38">
 
   <meta name="author" content="Matej">
-  <meta name="dcterms.date" content="2026-07-01">
+  <meta name="dcterms.date" content="2026-07-02">
   <title>Predicting Churn &amp; Billing</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -142,7 +142,7 @@ Matej
 </div>
 </div>
 
-  <p class="date">2026-07-01</p>
+  <p class="date">2026-07-02</p>
 </section>
 <section id="the-problem" class="slide level2">
 <h2>The problem</h2>
@@ -202,6 +202,19 @@ Matej
 <li>Monthly bill is almost entirely explained by <strong>plan + add-ons</strong></li>
 <li>Same plan → nearly the same bill (~$1 variation)</li>
 <li>A simple model predicts bills very accurately — useful as a <strong>pricing sanity check</strong>, not a way to set prices</li>
+</ul>
+</section>
+<section id="isnt-r²-0.999-just-overfitting" class="slide level2">
+<h2>“Isn’t R² = 0.999 just overfitting?”</h2>
+<ul>
+<li>Fair question — checked it four ways, not just assumed:
+<ul>
+<li>Train / validation / test R² all ≈ <strong>0.999</strong>, essentially no gap</li>
+<li>5-fold cross-validation: stable to the 3rd decimal</li>
+<li><strong>Permutation test</strong> — shuffle the target, refit → R² collapses to <strong>0.03</strong></li>
+<li>Ridge’s coefficients recover a clean, auditable price list</li>
+</ul></li>
+<li>A real gap (train ≫ test) is what overfitting looks like — this isn’t that</li>
 </ul>
 </section>
 <section id="honest-limits" class="slide level2">

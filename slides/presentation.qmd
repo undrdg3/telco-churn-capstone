@@ -52,6 +52,15 @@ correctly.
 - A simple model predicts bills very accurately — useful as a
   **pricing sanity check**, not a way to set prices
 
+## "Isn't R² = 0.999 just overfitting?"
+
+- Fair question — checked it four ways, not just assumed:
+  - Train / validation / test R² all ≈ **0.999**, essentially no gap
+  - 5-fold cross-validation: stable to the 3rd decimal
+  - **Permutation test** — shuffle the target, refit → R² collapses to **0.03**
+  - Ridge's coefficients recover a clean, auditable price list
+- A real gap (train ≫ test) is what overfitting looks like — this isn't that
+
 ## Honest limits
 
 - Churn model: real signal, not perfect — a decision-support tool, not
